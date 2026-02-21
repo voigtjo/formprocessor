@@ -1,0 +1,6 @@
+/* Tailwind handles most styling; keep tiny defaults here. */
+code {
+  border-radius: 0.25rem;
+  background: #e2e8f0;
+  padding: 0.1rem 0.35rem;
+}

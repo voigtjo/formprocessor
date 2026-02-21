@@ -1,0 +1,20 @@
+<%- include('../partials/header', { title }) %>
+<div class="max-w-2xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+  <h1 class="mb-4 text-xl font-semibold">New Template</h1>
+  <form method="post" action="/ui-actions/forms" class="space-y-4">
+    <div>
+      <label class="block text-sm font-medium text-slate-700">Key</label>
+      <input name="key" required class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700">Name</label>
+      <input name="name" required class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700">Description</label>
+      <textarea name="description" rows="4" class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"></textarea>
+    </div>
+    <button type="submit" class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700">Create</button>
+  </form>
+</div>
+<%- include('../partials/footer') %>
