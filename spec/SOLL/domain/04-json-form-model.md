@@ -10,6 +10,7 @@ Each field definition:
   "key": "product_id",
   "type": "string",
   "label": "Product",
+  "headerRole": "ASSIGNMENT",
   "semantic": "WRITABLE_ENTITY",
   "readonly": false,
   "required": true,
@@ -28,6 +29,7 @@ Constraints:
 - `semantic` is one of: `READONLY_EXTERNAL`, `WRITABLE_ENTITY`
 - `lookup` is optional
 - `lookup.kind` currently supports `api`
+- `headerRole` is optional and can be `ASSIGNMENT` or `KEY` (used by `PRODUCTION_ORDER` and `CUSTOMER_ORDER` templates to map header values)
 
 ## layout_json (object)
 

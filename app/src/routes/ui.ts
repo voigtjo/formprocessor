@@ -7,11 +7,23 @@ import { validateTemplateJsonSyntax } from "../forms/syntax.js";
 import { ProductsRepo } from "../repos/productsRepo.js";
 import { EntityService } from "../services/entityService.js";
 import { TemplateService } from "../services/templateService.js";
+import {
+  FORM_TYPES,
+  FORM_TYPE_REGISTRY,
+  resolveFormTypeConfig,
+  type FormTypeId,
+} from "../formTypes/registry.js";
+import { getStarterTemplate } from "../formTypes/starterTemplates.js";
 
 const createTemplateBodySchema = z.object({
   key: z.string().min(1),
   name: z.string().min(1),
+  templateType: z.enum(FORM_TYPES).default("PRODUCTION_ORDER_BATCH"),
   description: z.string().optional(),
+});
+
+const formsNewQuerySchema = z.object({
+  templateType: z.enum(FORM_TYPES).optional(),
 });
 
 const templateParamsSchema = z.object({
@@ -22,6 +34,11 @@ const saveTestBodySchema = z.object({
   field_defs_json: z.string().min(1),
   layout_json: z.string().min(1),
   rules_json: z.string().min(1),
+});
+
+const updateHeaderConfigBodySchema = z.object({
+  assignment_field: z.string().min(1),
+  key_field: z.string().min(1),
 });
 
 const entityParamsSchema = z.object({
@@ -40,6 +57,36 @@ const startEntityBodySchema = z.object({
     }),
 });
 
+const startBodySchema = z.object({
+  type: z.enum(FORM_TYPES),
+  templateId: z.string().uuid(),
+  assignmentId: z.string().uuid(),
+  keyId: z.string().uuid(),
+});
+
+const optionalUuidFromQuery = z.preprocess((value) => {
+  if (value === undefined || value === null) return undefined;
+  const text = String(value).trim();
+  if (!text || text === "null" || text === "Select..." || text === "undefined") return undefined;
+  return text;
+}, z.string().uuid().optional());
+
+const optionalTypeFromQuery = z.preprocess((value) => {
+  if (value === undefined || value === null) return undefined;
+  const text = String(value).trim();
+  if (!text.length) return undefined;
+  if (text === "BATCH_PRODUCTION_ORDER" || text === "PRODUCTION_ORDER") return "PRODUCTION_ORDER_BATCH";
+  if (text === "SERIAL_PRODUCTION_ORDER") return "PRODUCTION_ORDER_SERIAL";
+  return text;
+}, z.enum(FORM_TYPES).optional());
+
+const startPageQuerySchema = z.object({
+  type: optionalTypeFromQuery,
+  templateId: optionalUuidFromQuery,
+  assignmentId: optionalUuidFromQuery,
+  keyId: optionalUuidFromQuery,
+});
+
 type RequireGroupRoleFn = typeof requireGroupRole;
 
 type UiRouteDeps = {
@@ -48,33 +95,6 @@ type UiRouteDeps = {
   productsRepo?: ProductsRepo;
   lookupOptionsProvider?: LookupOptionsProvider;
   requireGroupRoleFn?: RequireGroupRoleFn;
-};
-
-const demoFieldDefs = [
-  {
-    key: "product_id",
-    type: "string",
-    label: "Product",
-    semantic: "WRITABLE_ENTITY",
-    readonly: false,
-    required: true,
-    lookup: {
-      kind: "api",
-      url: "/api/products?valid=true",
-      valueField: "id",
-      labelField: "name",
-    },
-  },
-];
-
-const demoLayout = {
-  title: "Demo Product Form",
-  sections: [
-    {
-      title: "Main",
-      rows: [{ cols: [{ field: "product_id" }] }],
-    },
-  ],
 };
 
 function parseJsonFromText(value: string, fieldName: string) {
@@ -95,6 +115,42 @@ function parseWithSchema<T>(schema: z.ZodSchema<T>, value: unknown) {
     throw err;
   }
   return result.data;
+}
+
+async function loadAssignmentOptions(productsRepo: ProductsRepo, formType: FormTypeId) {
+  const config = FORM_TYPE_REGISTRY[formType];
+  if (config.assignment.kind === "product") {
+    return (await productsRepo.listProducts({ valid: true })).map((p: any) => ({ id: p.id, label: p.name }));
+  }
+  return (await productsRepo.listCustomers({ valid: true })).map((c: any) => ({ id: c.id, label: c.name }));
+}
+
+async function loadKeyOptions(args: {
+  productsRepo: ProductsRepo;
+  keyField: string;
+  assignmentId?: string;
+}) {
+  if (!args.assignmentId) return [];
+
+  if (args.keyField === "batch_id") {
+    return (await args.productsRepo.listBatches({ productId: args.assignmentId, valid: true })).map((row: any) => ({
+      id: row.id,
+      label: row.code,
+    }));
+  }
+  if (args.keyField === "serial_id" || args.keyField === "serial_no") {
+    return (await args.productsRepo.listSerials({ productId: args.assignmentId, valid: true })).map((row: any) => ({
+      id: row.id,
+      label: row.code ?? row.serial_no ?? row.serialNo,
+    }));
+  }
+  if (args.keyField === "customer_order_id") {
+    return (await args.productsRepo.listCustomerOrders({ customerId: args.assignmentId, valid: true })).map((row: any) => ({
+      id: row.id,
+      label: row.order_no ?? row.orderNo,
+    }));
+  }
+  return [];
 }
 
 async function requireDefaultGroupMembership(args: {
@@ -131,6 +187,53 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
     return productsRepo.listProducts();
   });
 
+  app.get("/api/batches", async (req) => {
+    const querySchema = z.object({
+      product_id: z.string().uuid(),
+      valid: z.enum(["true", "false"]).optional(),
+    });
+    const query = parseWithSchema(querySchema, req.query);
+    if (query.valid === "true") {
+      return productsRepo.listBatches({ productId: query.product_id, valid: true });
+    }
+    return productsRepo.listBatches({ productId: query.product_id });
+  });
+
+  app.get("/api/serials", async (req) => {
+    const querySchema = z.object({
+      product_id: z.string().uuid(),
+      valid: z.enum(["true", "false"]).optional(),
+    });
+    const query = parseWithSchema(querySchema, req.query);
+    if (query.valid === "true") {
+      return productsRepo.listSerials({ productId: query.product_id, valid: true });
+    }
+    return productsRepo.listSerials({ productId: query.product_id });
+  });
+
+  app.get("/api/customers", async (req) => {
+    const querySchema = z.object({
+      valid: z.enum(["true", "false"]).optional(),
+    });
+    const query = parseWithSchema(querySchema, req.query);
+    if (query.valid === "true") {
+      return productsRepo.listCustomers({ valid: true });
+    }
+    return productsRepo.listCustomers();
+  });
+
+  app.get("/api/customer-orders", async (req) => {
+    const querySchema = z.object({
+      customer_id: z.string().uuid(),
+      valid: z.enum(["true", "false"]).optional(),
+    });
+    const query = parseWithSchema(querySchema, req.query);
+    if (query.valid === "true") {
+      return productsRepo.listCustomerOrders({ customerId: query.customer_id, valid: true });
+    }
+    return productsRepo.listCustomerOrders({ customerId: query.customer_id });
+  });
+
   app.get("/ui/forms", async (req, reply) => {
     await requireDefaultGroupMembership({
       userId: req.currentUser!.id,
@@ -149,7 +252,16 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
       templateService,
       requireGroupRoleFn,
     });
-    return reply.view("pages/forms_new", { title: "New Template" });
+    const query = parseWithSchema(formsNewQuerySchema, req.query);
+    const selectedTemplateType = query.templateType ?? "PRODUCTION_ORDER_BATCH";
+    const starter = await getStarterTemplate(selectedTemplateType);
+    return reply.view("pages/forms_new", {
+      title: "New Template",
+      selectedTemplateType,
+      initialFieldDefsJson: JSON.stringify(starter.fieldDefsJson, null, 2),
+      initialLayoutJson: JSON.stringify(starter.layoutJson, null, 2),
+      initialRulesJson: JSON.stringify(starter.rulesJson, null, 2),
+    });
   });
 
   app.get("/ui/forms/:id", async (req, reply) => {
@@ -162,7 +274,18 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
 
     const params = parseWithSchema(templateParamsSchema, req.params);
     const detail = await templateService.getTemplateDetail(params.id);
+    const starter = await getStarterTemplate(detail.template.templateType);
     const latestTest = detail.versions.find((v) => v.channel === "TEST");
+    const headerOptionFieldDefs = Array.isArray(latestTest?.fieldDefsJson) && latestTest.fieldDefsJson.length
+      ? latestTest.fieldDefsJson
+      : starter.fieldDefsJson;
+    const headerFieldOptions = (Array.isArray(headerOptionFieldDefs) ? headerOptionFieldDefs : [])
+      .filter((f: any) => typeof f?.key === "string")
+      .map((f: any) => ({
+        key: f.key as string,
+        label: typeof f?.label === "string" && f.label ? f.label : (f.key as string),
+        headerRole: typeof f?.headerRole === "string" ? f.headerRole : null,
+      }));
     let previewHtml = "";
     let previewError: string | null = null;
 
@@ -186,35 +309,30 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
       initialFieldDefsJson: JSON.stringify(
         Array.isArray(latestTest?.fieldDefsJson) && latestTest.fieldDefsJson.length
           ? latestTest.fieldDefsJson
-          : demoFieldDefs,
+          : starter.fieldDefsJson,
         null,
         2,
       ),
       initialLayoutJson: JSON.stringify(
         latestTest?.layoutJson && typeof latestTest.layoutJson === "object" && Object.keys(latestTest.layoutJson as object).length
           ? latestTest.layoutJson
-          : demoLayout,
+          : starter.layoutJson,
         null,
         2,
       ),
-      initialRulesJson: JSON.stringify(latestTest?.rulesJson ?? [], null, 2),
+      initialRulesJson: JSON.stringify(
+        latestTest?.rulesJson ?? starter.rulesJson,
+        null,
+        2,
+      ),
+      headerFieldOptions,
       previewHtml,
       previewError,
     });
   });
 
   app.get("/ui/entities", async (req, reply) => {
-    await requireDefaultGroupMembership({
-      userId: req.currentUser!.id,
-      allowed: ["ADMIN", "MANAGER", "EDITOR", "MEMBER"],
-      templateService,
-      requireGroupRoleFn,
-    });
-
-    const defaultGroupId = await templateService.getDefaultGroupId();
-    const items = await entityService.listEntitiesForGroup(defaultGroupId);
-    const startTemplates = await entityService.listStartableTemplates(defaultGroupId);
-    return reply.view("pages/entities_list", { title: "Entities", items, startTemplates });
+    return reply.redirect("/ui/start", 302);
   });
 
   app.get("/ui/entities/:id", async (req, reply) => {
@@ -235,6 +353,7 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
       entity: detail.entity,
       template: detail.template,
       version: detail.version,
+      headerInfo: detail.headerInfo,
       approvals: detail.approvals,
       readonlyMode,
       formHtml,
@@ -253,6 +372,7 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
     const templateId = await templateService.createTemplate({
       key: body.key,
       name: body.name,
+      templateType: body.templateType ?? "PRODUCTION_ORDER_BATCH",
       description: body.description,
       currentUserId: req.currentUser!.id,
     });
@@ -307,6 +427,42 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
     return reply.redirect(`/ui/forms/${params.id}`, 303);
   });
 
+  app.post("/ui-actions/forms/:id/header-config", async (req, reply) => {
+    await requireDefaultGroupMembership({
+      userId: req.currentUser!.id,
+      allowed: ["ADMIN", "MANAGER"],
+      templateService,
+      requireGroupRoleFn,
+    });
+    const params = parseWithSchema(templateParamsSchema, req.params);
+    const body = parseWithSchema(updateHeaderConfigBodySchema, req.body);
+    await templateService.updateTemplateHeaderConfig({
+      templateId: params.id,
+      assignmentField: body.assignment_field,
+      keyField: body.key_field,
+    });
+    return reply.redirect(`/ui/forms/${params.id}`, 303);
+  });
+
+  app.post("/ui-actions/forms/:id/reset-starter", async (req, reply) => {
+    await requireDefaultGroupMembership({
+      userId: req.currentUser!.id,
+      allowed: ["ADMIN", "MANAGER"],
+      templateService,
+      requireGroupRoleFn,
+    });
+    const params = parseWithSchema(templateParamsSchema, req.params);
+    const detail = await templateService.getTemplateDetail(params.id);
+    const starter = await getStarterTemplate(detail.template.templateType);
+    await templateService.saveLatestTestJson({
+      templateId: params.id,
+      fieldDefsJson: starter.fieldDefsJson,
+      layoutJson: starter.layoutJson,
+      rulesJson: starter.rulesJson,
+    });
+    return reply.redirect(`/ui/forms/${params.id}`, 303);
+  });
+
   app.post("/ui-actions/entities/:id/save", async (req, reply) => {
     await requireDefaultGroupMembership({
       userId: req.currentUser!.id,
@@ -338,6 +494,138 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
       groupId,
       templateId: body.templateId,
       businessKey: body.businessKey,
+      currentUserId: req.currentUser!.id,
+    });
+    return reply.redirect(`/ui/entities/${entityId}`, 303);
+  });
+
+  app.get("/ui/start", async (req, reply) => {
+    await requireDefaultGroupMembership({
+      userId: req.currentUser!.id,
+      allowed: ["ADMIN", "MANAGER", "EDITOR", "MEMBER"],
+      templateService,
+      requireGroupRoleFn,
+    });
+    const groupId = await templateService.getDefaultGroupId();
+    const query = parseWithSchema(startPageQuerySchema, req.query);
+    const selectedType: FormTypeId = (query.type as FormTypeId | undefined) ?? "PRODUCTION_ORDER_BATCH";
+    const selectedTemplateId = typeof query.templateId === "string" ? query.templateId : undefined;
+    const selectedAssignmentId = typeof query.assignmentId === "string" ? query.assignmentId : undefined;
+    const selectedKeyId = typeof query.keyId === "string" ? query.keyId : undefined;
+    const startTemplates = await entityService.listStartableTemplatesByType(groupId, selectedType);
+    const selectedTemplate = selectedTemplateId ? startTemplates.find((t: any) => t.templateId === selectedTemplateId) : undefined;
+    const effectiveConfig = resolveFormTypeConfig({
+      templateType: selectedTemplate?.templateType ?? selectedType,
+      assignmentField: (selectedTemplate as any)?.assignmentField,
+      keyField: (selectedTemplate as any)?.keyField,
+    });
+    const assignmentOptions = await loadAssignmentOptions(productsRepo, effectiveConfig.id);
+    const keyOptions = await loadKeyOptions({
+      productsRepo,
+      keyField: effectiveConfig.key.field,
+      assignmentId: selectedAssignmentId,
+    });
+    const items = await entityService.listEntitiesForFormType(groupId, selectedType);
+
+    return reply.view("pages/start_list", {
+      title: "Start",
+      formTypes: FORM_TYPES.map((id) => ({ id, label: FORM_TYPE_REGISTRY[id].label })),
+      selectedType,
+      selectedTemplateId,
+      selectedAssignmentId,
+      selectedKeyId,
+      startTemplates,
+      assignmentOptions,
+      keyOptions,
+      effectiveConfig,
+      items,
+    });
+  });
+
+  app.post("/ui-actions/start", async (req, reply) => {
+    await requireDefaultGroupMembership({
+      userId: req.currentUser!.id,
+      allowed: ["ADMIN", "MANAGER"],
+      templateService,
+      requireGroupRoleFn,
+    });
+    const body = parseWithSchema(startBodySchema, req.body);
+    const groupId = await templateService.getDefaultGroupId();
+    const entityId = await entityService.startByFormType({
+      groupId,
+      templateId: body.templateId,
+      formType: body.type,
+      assignmentId: body.assignmentId,
+      keyId: body.keyId,
+      currentUserId: req.currentUser!.id,
+    });
+    return reply.redirect(`/ui/entities/${entityId}`, 303);
+  });
+
+  app.get("/ui/orders", async (req, reply) => {
+    return reply.redirect("/ui/start?type=PRODUCTION_ORDER_BATCH", 302);
+  });
+
+  app.post("/ui-actions/orders/start", async (req, reply) => {
+    await requireDefaultGroupMembership({
+      userId: req.currentUser!.id,
+      allowed: ["ADMIN", "MANAGER"],
+      templateService,
+      requireGroupRoleFn,
+    });
+    const body = parseWithSchema(
+      z.object({
+        templateId: z.string().uuid(),
+        productId: z.string().uuid(),
+        batchId: z.string().uuid(),
+      }),
+      req.body,
+    );
+    const groupId = await templateService.getDefaultGroupId();
+    const entityId = await entityService.startByFormType({
+      groupId,
+      templateId: body.templateId,
+      formType: "PRODUCTION_ORDER_BATCH",
+      assignmentId: body.productId,
+      keyId: body.batchId,
+      currentUserId: req.currentUser!.id,
+    });
+    return reply.redirect(`/ui/entities/${entityId}`, 303);
+  });
+
+  app.get("/ui/customer-orders", async (req, reply) => {
+    return reply.redirect("/ui/start?type=CUSTOMER_ORDER", 302);
+  });
+
+  app.post("/ui-actions/customer-orders/start", async (req, reply) => {
+    await requireDefaultGroupMembership({
+      userId: req.currentUser!.id,
+      allowed: ["ADMIN", "MANAGER"],
+      templateService,
+      requireGroupRoleFn,
+    });
+    const body = parseWithSchema(
+      z.object({
+        templateId: z.string().uuid(),
+        customerId: z.string().uuid().optional(),
+        customer_id: z.string().uuid().optional(),
+        customerOrderId: z.string().uuid(),
+      }),
+      req.body,
+    );
+    const customerId = body.customerId ?? body.customer_id;
+    if (!customerId) {
+      const err: any = new Error("customerId is required");
+      err.statusCode = 400;
+      throw err;
+    }
+    const groupId = await templateService.getDefaultGroupId();
+    const entityId = await entityService.startByFormType({
+      groupId,
+      templateId: body.templateId,
+      formType: "CUSTOMER_ORDER",
+      assignmentId: customerId,
+      keyId: body.customerOrderId,
       currentUserId: req.currentUser!.id,
     });
     return reply.redirect(`/ui/entities/${entityId}`, 303);

@@ -58,8 +58,14 @@ describe("GET /ui/entities/:id", () => {
           businessKey: null,
           createdAt: new Date("2026-01-01T00:00:00.000Z"),
         },
-        template: { name: "Invoice Template", key: "invoice" },
         version: { channel: "TEST", major: 1, minor: 0, patch: 0 },
+        headerInfo: {
+          assignmentTitle: "Assignment (Product)",
+          keyTitle: "Key (Batch)",
+          assignmentLabel: "Alpha Basic",
+          keyLabel: "ALPHA-001",
+        },
+        template: { name: "Invoice Template", key: "invoice", type: "PRODUCTION_ORDER" },
         fieldDefs,
         layout,
         values: { product_id: "p1" },
@@ -106,4 +112,3 @@ describe("GET /ui/entities/:id", () => {
     await app.close();
   });
 });
-

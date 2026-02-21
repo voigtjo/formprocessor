@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "db:check": "vitest run src/db/schema-smoke.test.ts",
     "seed": "tsx src/db/seed.ts"
   },
   "dependencies": {

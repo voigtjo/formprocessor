@@ -10,6 +10,7 @@ export const fieldDefSchema = z.object({
   semantic: fieldSemanticSchema,
   readonly: z.boolean(),
   required: z.boolean(),
+  headerRole: z.enum(["ASSIGNMENT", "KEY"]).optional(),
   lookup: z
     .object({
       kind: z.literal("api"),
@@ -51,8 +52,8 @@ const layoutSectionSchema = z.object({
 });
 
 export const layoutSchema = z.object({
-  title: z.string().min(1),
-  sections: z.array(layoutSectionSchema),
+  title: z.string().min(1).optional().default("Form"),
+  sections: z.array(layoutSectionSchema).optional().default([]),
 });
 
 export type FieldDef = z.infer<typeof fieldDefSchema>;

@@ -5,6 +5,15 @@ export const groupRole = pgEnum("group_role", ["ADMIN", "MANAGER", "EDITOR", "ME
 export const releaseChannel = pgEnum("release_channel", ["TEST", "PROD"]);
 export const docStatus = pgEnum("doc_status", ["DRAFT", "SUBMITTED", "APPROVED_FINAL", "REJECTED"]);
 export const approvalDecision = pgEnum("approval_decision", ["APPROVE", "REJECT"]);
+export const templateType = pgEnum("template_type", [
+  "GENERIC",
+  "BATCH_PRODUCTION_ORDER",
+  "SERIAL_PRODUCTION_ORDER",
+  "PRODUCTION_ORDER_BATCH",
+  "PRODUCTION_ORDER_SERIAL",
+  "PRODUCTION_ORDER",
+  "CUSTOMER_ORDER",
+]);
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey(),
@@ -34,6 +43,9 @@ export const formTemplates = pgTable("form_templates", {
   ownerGroupId: uuid("owner_group_id").notNull(),
   key: text("key").notNull(),
   name: text("name").notNull(),
+  templateType: templateType("template_type").notNull().default("GENERIC"),
+  assignmentField: text("assignment_field"),
+  keyField: text("key_field"),
   description: text("description"),
   isPublicRead: boolean("is_public_read").notNull(),
   createdBy: uuid("created_by"),
@@ -54,6 +66,17 @@ export const formTemplateVersions = pgTable("form_template_versions", {
   publishedBy: uuid("published_by"),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
+export const starterTemplates = pgTable("starter_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  templateType: text("template_type").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  fieldDefsJson: jsonb("field_defs_json").notNull(),
+  layoutJson: jsonb("layout_json").notNull(),
+  rulesJson: jsonb("rules_json").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const entities = pgTable("entities", {
@@ -82,6 +105,37 @@ export const approvals = pgTable("approvals", {
 export const products = pgTable("products", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  valid: boolean("valid").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const batches = pgTable("batches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  productId: uuid("product_id").notNull(),
+  code: text("code").notNull(),
+  valid: boolean("valid").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const customers = pgTable("customers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  valid: boolean("valid").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const customerOrders = pgTable("customer_orders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  customerId: uuid("customer_id").notNull(),
+  orderNo: text("order_no").notNull(),
+  valid: boolean("valid").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const serials = pgTable("serials", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  productId: uuid("product_id").notNull(),
+  serialNo: text("serial_no").notNull(),
   valid: boolean("valid").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

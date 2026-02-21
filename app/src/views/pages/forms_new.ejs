@@ -1,7 +1,7 @@
 <%- include('../partials/header', { title }) %>
 <div class="max-w-2xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
   <h1 class="mb-4 text-xl font-semibold">New Template</h1>
-  <form method="post" action="/ui-actions/forms" class="space-y-4">
+  <form id="new-template-form" method="post" action="/ui-actions/forms" class="space-y-4">
     <div>
       <label class="block text-sm font-medium text-slate-700">Key</label>
       <input name="key" required class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
@@ -14,7 +14,56 @@
       <label class="block text-sm font-medium text-slate-700">Description</label>
       <textarea name="description" rows="4" class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"></textarea>
     </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700">Template Type</label>
+      <select id="template-type-select" name="templateType" class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <option value="PRODUCTION_ORDER_BATCH" <%= selectedTemplateType === 'PRODUCTION_ORDER_BATCH' ? 'selected' : '' %>>PRODUCTION_ORDER_BATCH</option>
+        <option value="PRODUCTION_ORDER_SERIAL" <%= selectedTemplateType === 'PRODUCTION_ORDER_SERIAL' ? 'selected' : '' %>>PRODUCTION_ORDER_SERIAL</option>
+        <option value="CUSTOMER_ORDER" <%= selectedTemplateType === 'CUSTOMER_ORDER' ? 'selected' : '' %>>CUSTOMER_ORDER</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700">field_defs_json</label>
+      <textarea id="field-defs-json" name="field_defs_json" rows="10" class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-xs"><%= initialFieldDefsJson %></textarea>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700">layout_json</label>
+      <textarea id="layout-json" name="layout_json" rows="10" class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-xs"><%= initialLayoutJson %></textarea>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700">rules_json</label>
+      <textarea id="rules-json" name="rules_json" rows="10" class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-xs"><%= initialRulesJson %></textarea>
+    </div>
+    <input type="hidden" id="starter-field-defs" value="<%= initialFieldDefsJson %>" />
+    <input type="hidden" id="starter-layout" value="<%= initialLayoutJson %>" />
+    <input type="hidden" id="starter-rules" value="<%= initialRulesJson %>" />
     <button type="submit" class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700">Create</button>
   </form>
 </div>
+<script>
+  (() => {
+    const form = document.getElementById("new-template-form");
+    const typeSelect = document.getElementById("template-type-select");
+    const fieldDefs = document.getElementById("field-defs-json");
+    const layout = document.getElementById("layout-json");
+    const rules = document.getElementById("rules-json");
+    const starterFieldDefs = document.getElementById("starter-field-defs");
+    const starterLayout = document.getElementById("starter-layout");
+    const starterRules = document.getElementById("starter-rules");
+    if (!form || !typeSelect || !fieldDefs || !layout || !rules || !starterFieldDefs || !starterLayout || !starterRules) return;
+
+    typeSelect.addEventListener("change", () => {
+      const changed =
+        fieldDefs.value !== starterFieldDefs.value ||
+        layout.value !== starterLayout.value ||
+        rules.value !== starterRules.value;
+      if (changed) {
+        const ok = window.confirm("Replace current JSON with starter template for selected type?");
+        if (!ok) return;
+      }
+      const nextType = encodeURIComponent(typeSelect.value);
+      window.location.href = `/ui/forms/new?templateType=${nextType}`;
+    });
+  })();
+</script>
 <%- include('../partials/footer') %>

@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import { db } from "../db/client.js";
@@ -11,6 +11,9 @@ export class EntityRepo {
         templateId: formTemplates.id,
         key: formTemplates.key,
         name: formTemplates.name,
+        templateType: formTemplates.templateType,
+        assignmentField: formTemplates.assignmentField,
+        keyField: formTemplates.keyField,
         versionId: formTemplateVersions.id,
       })
       .from(formTemplates)
@@ -23,6 +26,65 @@ export class EntityRepo {
         ),
       )
       .where(eq(formTemplates.ownerGroupId, groupId))
+      .orderBy(desc(formTemplates.createdAt));
+
+    return rows;
+  }
+
+  async listOrderTemplatesWithActiveTestVersion(groupId: string) {
+    const rows = await db
+      .select({
+        templateId: formTemplates.id,
+        key: formTemplates.key,
+        name: formTemplates.name,
+        templateType: formTemplates.templateType,
+        versionId: formTemplateVersions.id,
+      })
+      .from(formTemplates)
+      .innerJoin(
+        formTemplateVersions,
+        and(
+          eq(formTemplateVersions.templateId, formTemplates.id),
+          eq(formTemplateVersions.channel, "TEST"),
+          eq(formTemplateVersions.isActive, true),
+        ),
+      )
+      .where(
+        and(
+          eq(formTemplates.ownerGroupId, groupId),
+          or(
+            eq(formTemplates.templateType, "PRODUCTION_ORDER"),
+            eq(formTemplates.templateType, "BATCH_PRODUCTION_ORDER"),
+            eq(formTemplates.templateType, "SERIAL_PRODUCTION_ORDER"),
+            eq(formTemplates.templateType, "PRODUCTION_ORDER_BATCH"),
+            eq(formTemplates.templateType, "PRODUCTION_ORDER_SERIAL"),
+          )!,
+        ),
+      )
+      .orderBy(desc(formTemplates.createdAt));
+
+    return rows;
+  }
+
+  async listCustomerOrderTemplatesWithActiveTestVersion(groupId: string) {
+    const rows = await db
+      .select({
+        templateId: formTemplates.id,
+        key: formTemplates.key,
+        name: formTemplates.name,
+        templateType: formTemplates.templateType,
+        versionId: formTemplateVersions.id,
+      })
+      .from(formTemplates)
+      .innerJoin(
+        formTemplateVersions,
+        and(
+          eq(formTemplateVersions.templateId, formTemplates.id),
+          eq(formTemplateVersions.channel, "TEST"),
+          eq(formTemplateVersions.isActive, true),
+        ),
+      )
+      .where(and(eq(formTemplates.ownerGroupId, groupId), eq(formTemplates.templateType, "CUSTOMER_ORDER")))
       .orderBy(desc(formTemplates.createdAt));
 
     return rows;
@@ -43,12 +105,18 @@ export class EntityRepo {
     return rows[0];
   }
 
+  async getTemplateById(templateId: string) {
+    const rows = await db.select().from(formTemplates).where(eq(formTemplates.id, templateId)).limit(1);
+    return rows[0];
+  }
+
   async insertEntity(args: {
     templateId: string;
     templateVersionId: string;
     ownerGroupId: string;
     businessKey?: string;
     createdBy: string;
+    dataJson?: Record<string, unknown>;
   }) {
     const id = randomUUID();
     const now = new Date();
@@ -59,7 +127,7 @@ export class EntityRepo {
       ownerGroupId: args.ownerGroupId,
       businessKey: args.businessKey,
       status: "DRAFT",
-      dataJson: {},
+      dataJson: args.dataJson ?? {},
       readonlySnapshotJson: {},
       createdBy: args.createdBy,
       createdAt: now,
@@ -76,6 +144,7 @@ export class EntityRepo {
         templateId: args.templateId,
         templateVersionId: args.templateVersionId,
         businessKey: args.businessKey ?? null,
+        dataJson: args.dataJson ?? null,
       },
       createdAt: now,
     });
@@ -94,6 +163,9 @@ export class EntityRepo {
         createdAt: entities.createdAt,
         templateName: formTemplates.name,
         templateKey: formTemplates.key,
+        templateType: formTemplates.templateType,
+        assignmentField: formTemplates.assignmentField,
+        keyField: formTemplates.keyField,
         versionChannel: formTemplateVersions.channel,
         versionMajor: formTemplateVersions.major,
         versionMinor: formTemplateVersions.minor,
@@ -103,6 +175,65 @@ export class EntityRepo {
       .innerJoin(formTemplates, eq(formTemplates.id, entities.templateId))
       .innerJoin(formTemplateVersions, eq(formTemplateVersions.id, entities.templateVersionId))
       .where(eq(entities.ownerGroupId, groupId))
+      .orderBy(desc(entities.createdAt));
+  }
+
+  async listOrderEntitiesForGroup(groupId: string) {
+    return db
+      .select({
+        id: entities.id,
+        templateId: entities.templateId,
+        templateVersionId: entities.templateVersionId,
+        status: entities.status,
+        businessKey: entities.businessKey,
+        createdAt: entities.createdAt,
+        templateName: formTemplates.name,
+        templateKey: formTemplates.key,
+        templateType: formTemplates.templateType,
+        versionChannel: formTemplateVersions.channel,
+        versionMajor: formTemplateVersions.major,
+        versionMinor: formTemplateVersions.minor,
+        versionPatch: formTemplateVersions.patch,
+      })
+      .from(entities)
+      .innerJoin(formTemplates, eq(formTemplates.id, entities.templateId))
+      .innerJoin(formTemplateVersions, eq(formTemplateVersions.id, entities.templateVersionId))
+      .where(
+        and(
+          eq(entities.ownerGroupId, groupId),
+          or(
+            eq(formTemplates.templateType, "PRODUCTION_ORDER"),
+            eq(formTemplates.templateType, "BATCH_PRODUCTION_ORDER"),
+            eq(formTemplates.templateType, "SERIAL_PRODUCTION_ORDER"),
+            eq(formTemplates.templateType, "PRODUCTION_ORDER_BATCH"),
+            eq(formTemplates.templateType, "PRODUCTION_ORDER_SERIAL"),
+          )!,
+        ),
+      )
+      .orderBy(desc(entities.createdAt));
+  }
+
+  async listCustomerOrderEntitiesForGroup(groupId: string) {
+    return db
+      .select({
+        id: entities.id,
+        templateId: entities.templateId,
+        templateVersionId: entities.templateVersionId,
+        status: entities.status,
+        businessKey: entities.businessKey,
+        createdAt: entities.createdAt,
+        templateName: formTemplates.name,
+        templateKey: formTemplates.key,
+        templateType: formTemplates.templateType,
+        versionChannel: formTemplateVersions.channel,
+        versionMajor: formTemplateVersions.major,
+        versionMinor: formTemplateVersions.minor,
+        versionPatch: formTemplateVersions.patch,
+      })
+      .from(entities)
+      .innerJoin(formTemplates, eq(formTemplates.id, entities.templateId))
+      .innerJoin(formTemplateVersions, eq(formTemplateVersions.id, entities.templateVersionId))
+      .where(and(eq(entities.ownerGroupId, groupId), eq(formTemplates.templateType, "CUSTOMER_ORDER")))
       .orderBy(desc(entities.createdAt));
   }
 
@@ -126,6 +257,9 @@ export class EntityRepo {
         entity: entities,
         templateName: formTemplates.name,
         templateKey: formTemplates.key,
+        templateType: formTemplates.templateType,
+        assignmentField: formTemplates.assignmentField,
+        keyField: formTemplates.keyField,
         versionChannel: formTemplateVersions.channel,
         versionMajor: formTemplateVersions.major,
         versionMinor: formTemplateVersions.minor,

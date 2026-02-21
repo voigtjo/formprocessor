@@ -1,0 +1,51 @@
+{
+  "field_defs_json": [
+    {
+      "key": "customer_id",
+      "type": "string",
+      "label": "Customer",
+      "headerRole": "ASSIGNMENT",
+      "semantic": "WRITABLE_ENTITY",
+      "readonly": false,
+      "required": true,
+      "lookup": {
+        "kind": "api",
+        "url": "/api/customers?valid=true",
+        "valueField": "id",
+        "labelField": "name"
+      }
+    },
+    {
+      "key": "customer_order_id",
+      "type": "string",
+      "label": "Order No",
+      "headerRole": "KEY",
+      "semantic": "WRITABLE_ENTITY",
+      "readonly": false,
+      "required": true,
+      "lookup": {
+        "kind": "api",
+        "url": "/api/customer-orders?valid=true",
+        "valueField": "id",
+        "labelField": "order_no"
+      }
+    }
+  ],
+  "layout_json": {
+    "title": "Customer Order Form",
+    "sections": [
+      {
+        "title": "Main",
+        "rows": [
+          {
+            "cols": [
+              { "field": "customer_id" },
+              { "field": "customer_order_id" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rules_json": []
+}

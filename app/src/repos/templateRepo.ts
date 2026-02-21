@@ -9,7 +9,20 @@ export type CreateTemplateInput = {
   userId: string;
   key: string;
   name: string;
+  templateType:
+    | "GENERIC"
+    | "BATCH_PRODUCTION_ORDER"
+    | "SERIAL_PRODUCTION_ORDER"
+    | "PRODUCTION_ORDER_BATCH"
+    | "PRODUCTION_ORDER_SERIAL"
+    | "PRODUCTION_ORDER"
+    | "CUSTOMER_ORDER";
+  assignmentField?: string;
+  keyField?: string;
   description?: string;
+  initialFieldDefsJson?: unknown[];
+  initialLayoutJson?: Record<string, unknown>;
+  initialRulesJson?: unknown[];
 };
 
 export type SaveTestJsonInput = {
@@ -48,6 +61,9 @@ export class TemplateRepo {
       ownerGroupId: input.groupId,
       key: input.key,
       name: input.name,
+      templateType: input.templateType,
+      assignmentField: input.assignmentField,
+      keyField: input.keyField,
       description: input.description,
       isPublicRead: false,
       createdBy: input.userId,
@@ -62,9 +78,9 @@ export class TemplateRepo {
       major: 1,
       minor: 0,
       patch: 0,
-      fieldDefsJson: [],
-      layoutJson: {},
-      rulesJson: [],
+      fieldDefsJson: input.initialFieldDefsJson ?? [],
+      layoutJson: input.initialLayoutJson ?? { title: `${input.name} Form`, sections: [] },
+      rulesJson: input.initialRulesJson ?? [],
       createdAt: now,
     });
 
@@ -73,6 +89,26 @@ export class TemplateRepo {
 
   async getTemplateById(templateId: string) {
     const rows = await db.select().from(formTemplates).where(eq(formTemplates.id, templateId)).limit(1);
+    return rows[0];
+  }
+
+  async updateTemplateHeaderConfig(templateId: string, assignmentField: string | null, keyField: string | null) {
+    await db
+      .update(formTemplates)
+      .set({
+        assignmentField,
+        keyField,
+      })
+      .where(eq(formTemplates.id, templateId));
+  }
+
+  async getActiveVersionByChannel(templateId: string, channel: "TEST" | "PROD") {
+    const rows = await db
+      .select()
+      .from(formTemplateVersions)
+      .where(and(eq(formTemplateVersions.templateId, templateId), eq(formTemplateVersions.channel, channel), eq(formTemplateVersions.isActive, true)))
+      .orderBy(desc(formTemplateVersions.createdAt))
+      .limit(1);
     return rows[0];
   }
 
@@ -172,4 +208,3 @@ export class TemplateRepo {
     });
   }
 }
-

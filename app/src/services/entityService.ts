@@ -1,6 +1,12 @@
 import { EntityRepo } from "../repos/entityRepo.js";
+import { ProductsRepo } from "../repos/productsRepo.js";
 import type { FieldDef, LayoutJson } from "../forms/syntax.js";
 import { validateTemplateJsonSyntax } from "../forms/syntax.js";
+import {
+  normalizeTemplateType,
+  resolveFormTypeConfig,
+  type FormTypeId,
+} from "../formTypes/registry.js";
 
 function asRecord(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -8,10 +14,44 @@ function asRecord(value: unknown) {
 }
 
 export class EntityService {
-  constructor(private readonly repo = new EntityRepo()) {}
+  constructor(
+    private readonly repo = new EntityRepo(),
+    private readonly productsRepo = new ProductsRepo(),
+  ) {}
 
   async listStartableTemplates(groupId: string) {
     return this.repo.listTemplatesWithActiveTestVersion(groupId);
+  }
+
+  async listStartableTemplatesByType(groupId: string, formType: FormTypeId) {
+    const templates = await this.repo.listTemplatesWithActiveTestVersion(groupId);
+    return templates.filter((t: any) => normalizeTemplateType(t.templateType) === formType);
+  }
+
+  async listStartableOrderTemplates(groupId: string) {
+    return this.listStartableTemplatesByType(groupId, "PRODUCTION_ORDER_BATCH");
+  }
+
+  async listOrderEntitiesForGroup(groupId: string) {
+    const items = await this.repo.listEntitiesForGroup(groupId);
+    return items.filter((it: any) => {
+      const type = normalizeTemplateType(it.templateType);
+      return type === "PRODUCTION_ORDER_BATCH" || type === "PRODUCTION_ORDER_SERIAL";
+    });
+  }
+
+  async listStartableCustomerOrderTemplates(groupId: string) {
+    return this.listStartableTemplatesByType(groupId, "CUSTOMER_ORDER");
+  }
+
+  async listCustomerOrderEntitiesForGroup(groupId: string) {
+    const items = await this.repo.listEntitiesForGroup(groupId);
+    return items.filter((it: any) => normalizeTemplateType(it.templateType) === "CUSTOMER_ORDER");
+  }
+
+  async listEntitiesForFormType(groupId: string, formType: FormTypeId) {
+    const items = await this.repo.listEntitiesForGroup(groupId);
+    return items.filter((it: any) => normalizeTemplateType(it.templateType) === formType);
   }
 
   async startEntity(args: {
@@ -33,6 +73,93 @@ export class EntityService {
       ownerGroupId: args.groupId,
       businessKey: args.businessKey,
       createdBy: args.currentUserId,
+    });
+  }
+
+  async startOrder(args: {
+    groupId: string;
+    templateId: string;
+    productId: string;
+    batchId: string;
+    currentUserId: string;
+  }) {
+    return this.startByFormType({
+      groupId: args.groupId,
+      templateId: args.templateId,
+      formType: "PRODUCTION_ORDER_BATCH",
+      assignmentId: args.productId,
+      keyId: args.batchId,
+      currentUserId: args.currentUserId,
+    });
+  }
+
+  async startCustomerOrder(args: {
+    groupId: string;
+    templateId: string;
+    customerId: string;
+    customerOrderId: string;
+    currentUserId: string;
+  }) {
+    return this.startByFormType({
+      groupId: args.groupId,
+      templateId: args.templateId,
+      formType: "CUSTOMER_ORDER",
+      assignmentId: args.customerId,
+      keyId: args.customerOrderId,
+      currentUserId: args.currentUserId,
+    });
+  }
+
+  async startByFormType(args: {
+    groupId: string;
+    templateId: string;
+    formType: FormTypeId;
+    assignmentId: string;
+    keyId: string;
+    currentUserId: string;
+  }) {
+    const template = await this.repo.getTemplateById(args.templateId);
+    if (!template) {
+      const err: any = new Error("Template not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const config = resolveFormTypeConfig({
+      templateType: template.templateType,
+      assignmentField: template.assignmentField,
+      keyField: template.keyField,
+    });
+
+    const activeTestVersion = await this.repo.getActiveTestVersionForTemplate(args.templateId);
+    if (!activeTestVersion) {
+      const err: any = new Error("No active TEST version found for template");
+      err.statusCode = 409;
+      throw err;
+    }
+
+    const assignmentMeta = await this.resolveAssignmentMeta(config.assignment.kind, args.assignmentId);
+    const keyMeta = await this.resolveKeyMeta(config.key.kind, args.keyId, args.assignmentId);
+
+    const dataJson: Record<string, unknown> = {
+      _header: {
+        assignment: { type: assignmentMeta.type, id: assignmentMeta.id, label: assignmentMeta.label },
+        key: { type: keyMeta.type, id: keyMeta.id, label: keyMeta.label },
+      },
+      [config.assignment.field]: args.assignmentId,
+      [config.key.field]: args.keyId,
+    };
+    if (config.assignment.field === "product_id") {
+      dataJson.assignment_product_id = args.assignmentId;
+    }
+
+    return this.repo.insertEntity({
+      templateId: args.templateId,
+      templateVersionId: activeTestVersion.id,
+      ownerGroupId: args.groupId,
+      businessKey: keyMeta.label,
+      createdBy: args.currentUserId,
+      dataJson,
     });
   }
 
@@ -63,8 +190,48 @@ export class EntityService {
 
     const dataJson = asRecord(entity.dataJson);
     const snapshotJson = asRecord(entity.readonlySnapshotJson);
+    const header = asRecord(dataJson._header);
+    const headerAssignment = asRecord(header.assignment);
+    const headerKey = asRecord(header.key);
+    const assignmentIdFromHeader = headerAssignment.id ? String(headerAssignment.id) : undefined;
+    const keyIdFromHeader = headerKey.id ? String(headerKey.id) : undefined;
+    const assignmentFieldKey = joined.assignmentField ?? undefined;
+    const keyFieldKey = joined.keyField ?? undefined;
+    if (assignmentIdFromHeader && assignmentFieldKey && dataJson[assignmentFieldKey] === undefined) {
+      dataJson[assignmentFieldKey] = assignmentIdFromHeader;
+    }
+    if (keyIdFromHeader && keyFieldKey && dataJson[keyFieldKey] === undefined) {
+      dataJson[keyFieldKey] = keyIdFromHeader;
+    }
     const values = this.buildRenderValues(fieldDefs, dataJson, snapshotJson);
     const approvals = await this.repo.listApprovalsForEntity(entity.id);
+    const resolvedType = resolveFormTypeConfig({
+      templateType: joined.templateType,
+      assignmentField: joined.assignmentField,
+      keyField: joined.keyField,
+    });
+    const assignmentId =
+      assignmentIdFromHeader ??
+      (assignmentFieldKey ? ((dataJson[assignmentFieldKey] as string | undefined) ?? undefined) : undefined) ??
+      ((dataJson.assignment_product_id as string | undefined) ?? undefined);
+    const keyId =
+      keyIdFromHeader ??
+      (keyFieldKey ? ((dataJson[keyFieldKey] as string | undefined) ?? undefined) : undefined) ??
+      ((dataJson.batch_id as string | undefined) ?? undefined);
+
+    const assignmentLabelFromHeader =
+      (typeof headerAssignment.label === "string" && headerAssignment.label) || null;
+    const keyLabelFromHeader = (typeof headerKey.label === "string" && headerKey.label) || null;
+    const assignmentLabel = assignmentLabelFromHeader ?? (await this.getAssignmentLabel(resolvedType.assignment.kind, assignmentId));
+    const keyLabel = keyLabelFromHeader ?? (await this.getKeyLabel(resolvedType.key.kind, keyId));
+
+    const hasHeader = Boolean(headerAssignment.id && headerKey.id);
+    const effectiveFieldDefs =
+      hasHeader && (assignmentFieldKey || keyFieldKey)
+        ? fieldDefs.map((f) =>
+            f.key === assignmentFieldKey || f.key === keyFieldKey ? { ...f, readonly: true } : f,
+          )
+        : fieldDefs;
 
     return {
       entity,
@@ -72,6 +239,9 @@ export class EntityService {
       template: {
         name: joined.templateName,
         key: joined.templateKey,
+        type: joined.templateType,
+        assignmentField: joined.assignmentField,
+        keyField: joined.keyField,
       },
       version: {
         channel: joined.versionChannel,
@@ -79,11 +249,91 @@ export class EntityService {
         minor: joined.versionMinor,
         patch: joined.versionPatch,
       },
-      fieldDefs,
+      headerInfo: {
+        assignmentTitle: `Assignment (${resolvedType.assignment.label})`,
+        keyTitle: `Key (${resolvedType.key.label})`,
+        assignmentLabel,
+        keyLabel,
+      },
+      fieldDefs: effectiveFieldDefs,
       layout,
       values,
       approvals,
     };
+  }
+
+  private async resolveAssignmentMeta(kind: "product" | "customer", assignmentId: string) {
+    if (kind === "product") {
+      const product = await this.productsRepo.getProductById(assignmentId);
+      if (!product || !product.valid) {
+        const err: any = new Error("Invalid product selection");
+        err.statusCode = 400;
+        throw err;
+      }
+      return { type: "product" as const, id: assignmentId, label: product.name };
+    }
+
+    const customer = await this.productsRepo.getCustomerById(assignmentId);
+    if (!customer || !customer.valid) {
+      const err: any = new Error("Invalid customer selection");
+      err.statusCode = 400;
+      throw err;
+    }
+    return { type: "customer" as const, id: assignmentId, label: customer.name };
+  }
+
+  private async resolveKeyMeta(kind: "batch" | "serial" | "customer_order", keyId: string, assignmentId: string) {
+    if (kind === "batch") {
+      const batch = await this.productsRepo.getBatchById(keyId);
+      if (!batch || !batch.valid || batch.productId !== assignmentId) {
+        const err: any = new Error("Invalid batch selection");
+        err.statusCode = 400;
+        throw err;
+      }
+      return { type: "batch" as const, id: keyId, label: batch.code };
+    }
+
+    if (kind === "serial") {
+      const serial = await this.productsRepo.getSerialById(keyId);
+      if (!serial || !serial.valid || serial.productId !== assignmentId) {
+        const err: any = new Error("Invalid serial selection");
+        err.statusCode = 400;
+        throw err;
+      }
+      return { type: "serial" as const, id: keyId, label: serial.serialNo };
+    }
+
+    const customerOrder = await this.productsRepo.getCustomerOrderById(keyId);
+    if (!customerOrder || !customerOrder.valid || customerOrder.customerId !== assignmentId) {
+      const err: any = new Error("Invalid customer order selection");
+      err.statusCode = 400;
+      throw err;
+    }
+    return { type: "customer_order" as const, id: keyId, label: customerOrder.orderNo };
+  }
+
+  private async getAssignmentLabel(kind: "product" | "customer", id?: string) {
+    if (!id) return null;
+    if (kind === "product") {
+      const row = await this.productsRepo.getProductById(id);
+      return row?.name ?? null;
+    }
+    const row = await this.productsRepo.getCustomerById(id);
+    return row?.name ?? null;
+  }
+
+  private async getKeyLabel(kind: "batch" | "serial" | "customer_order", id?: string) {
+    if (!id) return null;
+    if (kind === "batch") {
+      const row = await this.productsRepo.getBatchById(id);
+      return row?.code ?? null;
+    }
+    if (kind === "serial") {
+      const row = await this.productsRepo.getSerialById(id);
+      return row?.serialNo ?? null;
+    }
+    const row = await this.productsRepo.getCustomerOrderById(id);
+    return row?.orderNo ?? null;
   }
 
   async saveEntityDataFromForm(args: {

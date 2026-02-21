@@ -14,50 +14,50 @@ import type { GroupRole } from "../rbac/rbac.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-describe("GET /ui/entities", () => {
-  it("renders template name when an entity exists", async () => {
+describe("GET /ui/forms/:id", () => {
+  it("does not render 'Invalid layout_json: Required' for empty-object layout_json", async () => {
     const templateService = {
       getDefaultGroupId: vi.fn(async () => "44444444-4444-4444-4444-444444444444"),
       listTemplatesForUserDefaultGroup: vi.fn(async () => []),
       createTemplate: vi.fn(async () => "11111111-1111-1111-1111-111111111111"),
-      getTemplateDetail: vi.fn(async () => ({ template: null, versions: [] })),
       saveLatestTestJson: vi.fn(async () => undefined),
       publishTest: vi.fn(async () => undefined),
       publishProd: vi.fn(async () => undefined),
+      updateTemplateHeaderConfig: vi.fn(async () => undefined),
+      getTemplateDetail: vi.fn(async () => ({
+        template: {
+          id: "11111111-1111-1111-1111-111111111111",
+          key: "serial",
+          name: "Serial Template",
+          templateType: "PRODUCTION_ORDER_SERIAL",
+          assignmentField: "product_id",
+          keyField: "serial_no",
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+        versions: [
+          {
+            id: "22222222-2222-2222-2222-222222222222",
+            templateId: "11111111-1111-1111-1111-111111111111",
+            channel: "TEST",
+            isActive: false,
+            major: 1,
+            minor: 0,
+            patch: 0,
+            fieldDefsJson: [],
+            layoutJson: {},
+            rulesJson: [],
+            createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          },
+        ],
+      })),
     } as unknown as TemplateService;
 
     const entityService = {
-      listEntitiesForGroup: vi.fn(async () => [
-        {
-          id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-          templateId: "11111111-1111-1111-1111-111111111111",
-          templateVersionId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-          status: "DRAFT",
-          businessKey: "BK-1",
-          createdAt: new Date("2026-01-01T00:00:00.000Z"),
-          templateName: "Invoice Template",
-          templateKey: "invoice",
-          versionChannel: "TEST",
-          versionMajor: 1,
-          versionMinor: 0,
-          versionPatch: 0,
-        },
-      ]),
+      listEntitiesForGroup: vi.fn(async () => []),
       listStartableTemplates: vi.fn(async () => []),
-      getEntityDetail: vi.fn(async () => undefined),
-      saveEntityDataFromForm: vi.fn(async () => undefined),
-      startEntity: vi.fn(async () => "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
     } as unknown as EntityService;
 
-    const requireGroupRoleFn = vi.fn(async (args: { allowed: GroupRole[] }) => {
-      const role: GroupRole = "MEMBER";
-      if (!args.allowed.includes(role)) {
-        const err: any = new Error("RBAC denied");
-        err.statusCode = 403;
-        throw err;
-      }
-      return role;
-    });
+    const requireGroupRoleFn = vi.fn(async (_args: { allowed: GroupRole[] }) => "MEMBER" as GroupRole);
 
     const app = Fastify();
     app.register(formbody);
@@ -68,11 +68,10 @@ describe("GET /ui/entities", () => {
     registerUiRoutes(app, { templateService, entityService, requireGroupRoleFn });
     await app.ready();
 
-    const res = await app.inject({ method: "GET", url: "/ui/entities" });
+    const res = await app.inject({ method: "GET", url: "/ui/forms/11111111-1111-1111-1111-111111111111" });
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain("Invoice Template");
+    expect(res.body).not.toContain("Invalid layout_json: Required");
 
     await app.close();
   });
 });
-

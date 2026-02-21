@@ -1,0 +1,51 @@
+{
+  "field_defs_json": [
+    {
+      "key": "product_id",
+      "type": "string",
+      "label": "Product",
+      "headerRole": "ASSIGNMENT",
+      "semantic": "WRITABLE_ENTITY",
+      "readonly": false,
+      "required": true,
+      "lookup": {
+        "kind": "api",
+        "url": "/api/products?valid=true",
+        "valueField": "id",
+        "labelField": "name"
+      }
+    },
+    {
+      "key": "batch_id",
+      "type": "string",
+      "label": "Batch",
+      "headerRole": "KEY",
+      "semantic": "WRITABLE_ENTITY",
+      "readonly": false,
+      "required": true,
+      "lookup": {
+        "kind": "api",
+        "url": "/api/batches?valid=true",
+        "valueField": "id",
+        "labelField": "code"
+      }
+    }
+  ],
+  "layout_json": {
+    "title": "Batch Production Form",
+    "sections": [
+      {
+        "title": "Main",
+        "rows": [
+          {
+            "cols": [
+              { "field": "product_id" },
+              { "field": "batch_id" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rules_json": []
+}

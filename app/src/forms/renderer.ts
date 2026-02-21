@@ -12,26 +12,83 @@ function esc(value: unknown) {
 }
 
 type LookupOption = { value: string; label: string };
-export type LookupOptionsProvider = (field: FieldDef) => Promise<LookupOption[]>;
+export type LookupOptionsProvider = (args: {
+  field: FieldDef;
+  values: Record<string, unknown>;
+}) => Promise<LookupOption[]>;
 
 const productsRepo = new ProductsRepo();
 
-async function defaultLookupOptionsProvider(field: FieldDef): Promise<LookupOption[]> {
-  const lookup = field.lookup;
+async function defaultLookupOptionsProvider(args: {
+  field: FieldDef;
+  values: Record<string, unknown>;
+}): Promise<LookupOption[]> {
+  const lookup = args.field.lookup;
   if (!lookup || lookup.kind !== "api") return [];
 
-  const validOnly = lookup.url.includes("valid=true");
-  const rows = await productsRepo.listProducts({ valid: validOnly });
-  return rows.map((r: any) => ({
-    value: String(r[lookup.valueField] ?? r.id ?? ""),
-    label: String(r[lookup.labelField] ?? r.name ?? ""),
-  }));
+  if (lookup.url.includes("/api/products")) {
+    const validOnly = lookup.url.includes("valid=true");
+    const rows = await productsRepo.listProducts({ valid: validOnly });
+    return rows.map((r: any) => ({
+      value: String(r[lookup.valueField] ?? r.id ?? ""),
+      label: String(r[lookup.labelField] ?? r.name ?? ""),
+    }));
+  }
+
+  if (lookup.url.includes("/api/batches")) {
+    const productId = (args.values.product_id as string | undefined) ?? (args.values.assignment_product_id as string | undefined);
+    if (!productId) return [];
+    const validOnly = lookup.url.includes("valid=true");
+    const rows = await productsRepo.listBatches({ productId, valid: validOnly });
+    return rows.map((r: any) => ({
+      value: String(r[lookup.valueField] ?? r.id ?? ""),
+      label: String(r[lookup.labelField] ?? r.code ?? ""),
+    }));
+  }
+
+  if (lookup.url.includes("/api/serials")) {
+    const productId =
+      (args.values.product_id as string | undefined) ??
+      (args.values.assignment_product_id as string | undefined) ??
+      ((args.values._header as any)?.assignment?.id as string | undefined);
+    if (!productId) return [];
+    const validOnly = lookup.url.includes("valid=true");
+    const rows = await productsRepo.listSerials({ productId, valid: validOnly });
+    return rows.map((r: any) => ({
+      value: String(r[lookup.valueField] ?? r.id ?? ""),
+      label: String(r[lookup.labelField] ?? r.code ?? r.serial_no ?? r.serialNo ?? ""),
+    }));
+  }
+
+  if (lookup.url.includes("/api/customers")) {
+    const validOnly = lookup.url.includes("valid=true");
+    const rows = await productsRepo.listCustomers({ valid: validOnly });
+    return rows.map((r: any) => ({
+      value: String(r[lookup.valueField] ?? r.id ?? ""),
+      label: String(r[lookup.labelField] ?? r.name ?? ""),
+    }));
+  }
+
+  if (lookup.url.includes("/api/customer-orders")) {
+    const customerId = (args.values.customer_id as string | undefined)
+      ?? ((args.values._header as any)?.assignment?.id as string | undefined);
+    if (!customerId) return [];
+    const validOnly = lookup.url.includes("valid=true");
+    const rows = await productsRepo.listCustomerOrders({ customerId, valid: validOnly });
+    return rows.map((r: any) => ({
+      value: String(r[lookup.valueField] ?? r.id ?? ""),
+      label: String(r[lookup.labelField] ?? r.order_no ?? r.orderNo ?? ""),
+    }));
+  }
+
+  return [];
 }
 
 async function renderInput(args: {
   field: FieldDef;
   value: unknown;
   disabled: boolean;
+  values: Record<string, unknown>;
   lookupOptionsProvider: LookupOptionsProvider;
 }) {
   const disabledAttr = args.disabled ? " disabled" : "";
@@ -50,7 +107,7 @@ async function renderInput(args: {
   }
 
   if (args.field.lookup) {
-    const options = await args.lookupOptionsProvider(args.field);
+    const options = await args.lookupOptionsProvider({ field: args.field, values: args.values });
     const selectedValue = args.value == null ? "" : String(args.value);
     const requiredEmptyOption = args.field.required
       ? `<option value="" disabled${selectedValue ? "" : " selected"}>Select...</option>`
@@ -98,7 +155,7 @@ export async function renderForm(
         const value = values[field.key];
         const disabled = readonlyMode || field.readonly || field.semantic === "READONLY_EXTERNAL";
         const label = `${esc(field.label)}${field.required ? " *" : ""}`;
-        const inputHtml = await renderInput({ field, value, disabled, lookupOptionsProvider });
+        const inputHtml = await renderInput({ field, value, disabled, values, lookupOptionsProvider });
         colParts.push(`
           <div class="col-span-1">
             <label class="block text-sm font-medium text-slate-700">${label}</label>

@@ -5,10 +5,21 @@
     <dl class="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
       <div><dt class="font-medium text-slate-600">ID</dt><dd><code><%= entity.id %></code></dd></div>
       <div><dt class="font-medium text-slate-600">Template</dt><dd><%= template.name %> (<code><%= template.key %></code>)</dd></div>
+      <div><dt class="font-medium text-slate-600">Template Type</dt><dd><%= template.type %></dd></div>
       <div><dt class="font-medium text-slate-600">Version</dt><dd><%= version.channel %> <%= `${version.major}.${version.minor}.${version.patch}` %></dd></div>
+      <div><dt class="font-medium text-slate-600"><%= headerInfo?.assignmentTitle ?? 'Assignment' %></dt><dd><%= headerInfo?.assignmentLabel ?? '-' %></dd></div>
+      <div><dt class="font-medium text-slate-600"><%= headerInfo?.keyTitle ?? 'Key' %></dt><dd><%= headerInfo?.keyLabel ?? '-' %></dd></div>
       <div><dt class="font-medium text-slate-600">Status</dt><dd><%= entity.status %></dd></div>
       <div><dt class="font-medium text-slate-600">Business Key</dt><dd><%= entity.businessKey ?? '-' %></dd></div>
       <div><dt class="font-medium text-slate-600">Created</dt><dd><%= new Date(entity.createdAt).toISOString() %></dd></div>
+    </dl>
+  </div>
+
+  <div class="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+    <h2 class="mb-3 text-lg font-semibold">Header</h2>
+    <dl class="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
+      <div><dt class="font-medium text-slate-600"><%= headerInfo?.assignmentTitle ?? 'Assignment' %></dt><dd><%= headerInfo?.assignmentLabel ?? '-' %></dd></div>
+      <div><dt class="font-medium text-slate-600"><%= headerInfo?.keyTitle ?? 'Key' %></dt><dd><%= headerInfo?.keyLabel ?? '-' %></dd></div>
     </dl>
   </div>
 
