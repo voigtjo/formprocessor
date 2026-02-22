@@ -46,17 +46,17 @@ async function defaultLookupOptionsProvider(args: {
     }));
   }
 
-  if (lookup.url.includes("/api/serials")) {
+  if (lookup.url.includes("/api/serial-numbers")) {
     const productId =
       (args.values.product_id as string | undefined) ??
       (args.values.assignment_product_id as string | undefined) ??
       ((args.values._header as any)?.assignment?.id as string | undefined);
     if (!productId) return [];
     const validOnly = lookup.url.includes("valid=true");
-    const rows = await productsRepo.listSerials({ productId, valid: validOnly });
+    const rows = await productsRepo.listSerialNumbers({ productId, valid: validOnly });
     return rows.map((r: any) => ({
       value: String(r[lookup.valueField] ?? r.id ?? ""),
-      label: String(r[lookup.labelField] ?? r.code ?? r.serial_no ?? r.serialNo ?? ""),
+      label: String(r[lookup.labelField] ?? r.serial_no ?? r.code ?? r.serialNo ?? ""),
     }));
   }
 

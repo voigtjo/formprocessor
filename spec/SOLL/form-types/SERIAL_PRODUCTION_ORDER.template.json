@@ -16,7 +16,7 @@
       }
     },
     {
-      "key": "serial_id",
+      "key": "serial_number_id",
       "type": "string",
       "label": "Serial No",
       "headerRole": "KEY",
@@ -25,7 +25,7 @@
       "required": true,
       "lookup": {
         "kind": "api",
-        "url": "/api/serials?valid=true",
+        "url": "/api/serial-numbers?valid=true&product_id={product_id}",
         "valueField": "id",
         "labelField": "serial_no"
       }
@@ -35,12 +35,12 @@
     "title": "Serial Production Form",
     "sections": [
       {
-        "title": "Main",
+        "title": "Header",
         "rows": [
           {
             "cols": [
               { "field": "product_id" },
-              { "field": "serial_id" }
+              { "field": "serial_number_id" }
             ]
           }
         ]

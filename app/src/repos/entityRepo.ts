@@ -160,6 +160,7 @@ export class EntityRepo {
         templateVersionId: entities.templateVersionId,
         status: entities.status,
         businessKey: entities.businessKey,
+        dataJson: entities.dataJson,
         createdAt: entities.createdAt,
         templateName: formTemplates.name,
         templateKey: formTemplates.key,
@@ -338,5 +339,14 @@ export class EntityRepo {
       .where(and(eq(entities.id, entityId), eq(entities.ownerGroupId, groupId)))
       .limit(1);
     return rows[0];
+  }
+
+  async deleteEntity(entityId: string, groupId: string) {
+    await db.delete(approvals).where(eq(approvals.entityId, entityId));
+    const rows = await db
+      .delete(entities)
+      .where(and(eq(entities.id, entityId), eq(entities.ownerGroupId, groupId)))
+      .returning({ id: entities.id });
+    return rows[0] ?? null;
   }
 }

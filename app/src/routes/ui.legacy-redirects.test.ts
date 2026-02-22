@@ -51,7 +51,7 @@ describe("legacy UI redirects", () => {
     await app.ready();
     const res = await app.inject({ method: "GET", url: "/ui/orders" });
     expect(res.statusCode).toBe(302);
-    expect(res.headers.location).toBe("/ui/start?type=PRODUCTION_ORDER_BATCH");
+    expect(res.headers.location).toBe("/ui/start?type=BATCH_PRODUCTION_ORDER");
     await app.close();
   });
 

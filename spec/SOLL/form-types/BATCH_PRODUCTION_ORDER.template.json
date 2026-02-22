@@ -25,7 +25,7 @@
       "required": true,
       "lookup": {
         "kind": "api",
-        "url": "/api/batches?valid=true",
+        "url": "/api/batches?valid=true&product_id={product_id}",
         "valueField": "id",
         "labelField": "code"
       }
@@ -35,7 +35,7 @@
     "title": "Batch Production Form",
     "sections": [
       {
-        "title": "Main",
+        "title": "Header",
         "rows": [
           {
             "cols": [

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { formTemplates, formTemplateVersions, groups } from "../db/schema.js";
+import { entities, formTemplates, formTemplateVersions, groups } from "../db/schema.js";
 
 export type CreateTemplateInput = {
   groupId: string;
@@ -206,5 +206,23 @@ export class TemplateRepo {
       publishedAt: new Date(),
       createdAt: new Date(),
     });
+  }
+
+  async hasEntitiesForTemplate(templateId: string) {
+    const rows = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.templateId, templateId))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  async deleteTemplate(templateId: string) {
+    await db.delete(formTemplateVersions).where(eq(formTemplateVersions.templateId, templateId));
+    const rows = await db
+      .delete(formTemplates)
+      .where(eq(formTemplates.id, templateId))
+      .returning({ id: formTemplates.id });
+    return rows[0] ?? null;
   }
 }

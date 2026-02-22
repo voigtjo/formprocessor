@@ -18,12 +18,23 @@ import { getStarterTemplate } from "../formTypes/starterTemplates.js";
 const createTemplateBodySchema = z.object({
   key: z.string().min(1),
   name: z.string().min(1),
-  templateType: z.enum(FORM_TYPES).default("PRODUCTION_ORDER_BATCH"),
+  templateType: z.enum(FORM_TYPES).default("BATCH_PRODUCTION_ORDER"),
   description: z.string().optional(),
 });
 
 const formsNewQuerySchema = z.object({
-  templateType: z.enum(FORM_TYPES).optional(),
+  templateType: z.preprocess((value) => {
+    if (value === undefined || value === null) return undefined;
+    const text = String(value).trim();
+    if (!text) return undefined;
+    if (text === "PRODUCTION_ORDER" || text === "ORDER" || text === "PRODUCTION_ORDER_BATCH") return "BATCH_PRODUCTION_ORDER";
+    if (text === "PRODUCTION_ORDER_SERIAL") return "SERIAL_PRODUCTION_ORDER";
+    return text;
+  }, z.enum(FORM_TYPES).optional()),
+});
+
+const formsDetailQuerySchema = z.object({
+  error: z.string().optional(),
 });
 
 const templateParamsSchema = z.object({
@@ -75,8 +86,14 @@ const optionalTypeFromQuery = z.preprocess((value) => {
   if (value === undefined || value === null) return undefined;
   const text = String(value).trim();
   if (!text.length) return undefined;
-  if (text === "BATCH_PRODUCTION_ORDER" || text === "PRODUCTION_ORDER") return "PRODUCTION_ORDER_BATCH";
-  if (text === "SERIAL_PRODUCTION_ORDER") return "PRODUCTION_ORDER_SERIAL";
+  if (
+    text === "PRODUCTION_ORDER" ||
+    text === "PRODUCTION_ORDER_BATCH" ||
+    text === "ORDER"
+  ) {
+    return "BATCH_PRODUCTION_ORDER";
+  }
+  if (text === "PRODUCTION_ORDER_SERIAL") return "SERIAL_PRODUCTION_ORDER";
   return text;
 }, z.enum(FORM_TYPES).optional());
 
@@ -130,18 +147,16 @@ async function loadKeyOptions(args: {
   keyField: string;
   assignmentId?: string;
 }) {
-  if (!args.assignmentId) return [];
-
   if (args.keyField === "batch_id") {
     return (await args.productsRepo.listBatches({ productId: args.assignmentId, valid: true })).map((row: any) => ({
       id: row.id,
       label: row.code,
     }));
   }
-  if (args.keyField === "serial_id" || args.keyField === "serial_no") {
-    return (await args.productsRepo.listSerials({ productId: args.assignmentId, valid: true })).map((row: any) => ({
+  if (args.keyField === "serial_id" || args.keyField === "serial_no" || args.keyField === "serial_number_id") {
+    return (await args.productsRepo.listSerialNumbers({ productId: args.assignmentId, valid: true })).map((row: any) => ({
       id: row.id,
-      label: row.code ?? row.serial_no ?? row.serialNo,
+      label: row.serial_no ?? row.code ?? row.serialNo,
     }));
   }
   if (args.keyField === "customer_order_id") {
@@ -151,6 +166,30 @@ async function loadKeyOptions(args: {
     }));
   }
   return [];
+}
+
+async function resolveAssignmentFromKey(args: {
+  productsRepo: ProductsRepo;
+  keyField: string;
+  keyId?: string;
+}) {
+  if (!args.keyId) return undefined;
+  if (args.keyField === "batch_id") {
+    const row = await args.productsRepo.getBatchById(args.keyId);
+    if (!row?.valid) return undefined;
+    return row.productId;
+  }
+  if (args.keyField === "serial_id" || args.keyField === "serial_no" || args.keyField === "serial_number_id") {
+    const row = await args.productsRepo.getSerialNumberById(args.keyId);
+    if (!row?.valid) return undefined;
+    return row.productId;
+  }
+  if (args.keyField === "customer_order_id") {
+    const row = await args.productsRepo.getCustomerOrderById(args.keyId);
+    if (!row?.valid) return undefined;
+    return row.customerId;
+  }
+  return undefined;
 }
 
 async function requireDefaultGroupMembership(args: {
@@ -193,22 +232,25 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
       valid: z.enum(["true", "false"]).optional(),
     });
     const query = parseWithSchema(querySchema, req.query);
-    if (query.valid === "true") {
-      return productsRepo.listBatches({ productId: query.product_id, valid: true });
-    }
-    return productsRepo.listBatches({ productId: query.product_id });
+    const openOnly = query.valid === "true";
+    const rows = await productsRepo.listBatches({
+      productId: query.product_id,
+      valid: openOnly ? true : undefined,
+    });
+    return rows.map((row: any) => ({ id: row.id, code: row.code }));
   });
 
-  app.get("/api/serials", async (req) => {
+  app.get("/api/serial-numbers", async (req) => {
     const querySchema = z.object({
       product_id: z.string().uuid(),
       valid: z.enum(["true", "false"]).optional(),
     });
     const query = parseWithSchema(querySchema, req.query);
-    if (query.valid === "true") {
-      return productsRepo.listSerials({ productId: query.product_id, valid: true });
-    }
-    return productsRepo.listSerials({ productId: query.product_id });
+    const rows = await productsRepo.listSerialNumbers({
+      productId: query.product_id,
+      valid: query.valid === "true" ? true : undefined,
+    });
+    return rows.map((row: any) => ({ id: row.id, serial_no: row.serial_no ?? row.serialNo }));
   });
 
   app.get("/api/customers", async (req) => {
@@ -228,10 +270,11 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
       valid: z.enum(["true", "false"]).optional(),
     });
     const query = parseWithSchema(querySchema, req.query);
-    if (query.valid === "true") {
-      return productsRepo.listCustomerOrders({ customerId: query.customer_id, valid: true });
-    }
-    return productsRepo.listCustomerOrders({ customerId: query.customer_id });
+    const rows = await productsRepo.listCustomerOrders({
+      customerId: query.customer_id,
+      valid: query.valid === "true" ? true : undefined,
+    });
+    return rows.map((row: any) => ({ id: row.id, order_no: row.order_no ?? row.orderNo }));
   });
 
   app.get("/ui/forms", async (req, reply) => {
@@ -253,7 +296,7 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
       requireGroupRoleFn,
     });
     const query = parseWithSchema(formsNewQuerySchema, req.query);
-    const selectedTemplateType = query.templateType ?? "PRODUCTION_ORDER_BATCH";
+    const selectedTemplateType = (query.templateType as FormTypeId | undefined) ?? "BATCH_PRODUCTION_ORDER";
     const starter = await getStarterTemplate(selectedTemplateType);
     return reply.view("pages/forms_new", {
       title: "New Template",
@@ -273,8 +316,12 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
     });
 
     const params = parseWithSchema(templateParamsSchema, req.params);
+    const query = parseWithSchema(formsDetailQuerySchema, req.query);
     const detail = await templateService.getTemplateDetail(params.id);
-    const starter = await getStarterTemplate(detail.template.templateType);
+    const starter = await getStarterTemplate(String(detail.template.templateType ?? "BATCH_PRODUCTION_ORDER"), {
+      assignmentField: detail.template.assignmentField,
+      keyField: detail.template.keyField,
+    });
     const latestTest = detail.versions.find((v) => v.channel === "TEST");
     const headerOptionFieldDefs = Array.isArray(latestTest?.fieldDefsJson) && latestTest.fieldDefsJson.length
       ? latestTest.fieldDefsJson
@@ -328,6 +375,7 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
       headerFieldOptions,
       previewHtml,
       previewError,
+      pageError: query.error,
     });
   });
 
@@ -372,7 +420,7 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
     const templateId = await templateService.createTemplate({
       key: body.key,
       name: body.name,
-      templateType: body.templateType ?? "PRODUCTION_ORDER_BATCH",
+      templateType: body.templateType ?? "BATCH_PRODUCTION_ORDER",
       description: body.description,
       currentUserId: req.currentUser!.id,
     });
@@ -453,7 +501,10 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
     });
     const params = parseWithSchema(templateParamsSchema, req.params);
     const detail = await templateService.getTemplateDetail(params.id);
-    const starter = await getStarterTemplate(detail.template.templateType);
+    const starter = await getStarterTemplate(detail.template.templateType, {
+      assignmentField: detail.template.assignmentField,
+      keyField: detail.template.keyField,
+    });
     await templateService.saveLatestTestJson({
       templateId: params.id,
       fieldDefsJson: starter.fieldDefsJson,
@@ -461,6 +512,26 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
       rulesJson: starter.rulesJson,
     });
     return reply.redirect(`/ui/forms/${params.id}`, 303);
+  });
+
+  app.post("/ui-actions/forms/:id/delete", async (req, reply) => {
+    await requireDefaultGroupMembership({
+      userId: req.currentUser!.id,
+      allowed: ["ADMIN", "MANAGER"],
+      templateService,
+      requireGroupRoleFn,
+    });
+    const params = parseWithSchema(templateParamsSchema, req.params);
+    try {
+      await templateService.deleteTemplate(params.id);
+    } catch (err: any) {
+      if (err?.statusCode === 409) {
+        const message = encodeURIComponent(err?.message ?? "Template delete failed");
+        return reply.redirect(`/ui/forms/${params.id}?error=${message}`, 303);
+      }
+      throw err;
+    }
+    return reply.redirect("/ui/forms", 303);
   });
 
   app.post("/ui-actions/entities/:id/save", async (req, reply) => {
@@ -508,10 +579,10 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
     });
     const groupId = await templateService.getDefaultGroupId();
     const query = parseWithSchema(startPageQuerySchema, req.query);
-    const selectedType: FormTypeId = (query.type as FormTypeId | undefined) ?? "PRODUCTION_ORDER_BATCH";
+    const selectedType: FormTypeId = (query.type as FormTypeId | undefined) ?? "BATCH_PRODUCTION_ORDER";
     const selectedTemplateId = typeof query.templateId === "string" ? query.templateId : undefined;
-    const selectedAssignmentId = typeof query.assignmentId === "string" ? query.assignmentId : undefined;
-    const selectedKeyId = typeof query.keyId === "string" ? query.keyId : undefined;
+    let selectedAssignmentId = typeof query.assignmentId === "string" ? query.assignmentId : undefined;
+    let selectedKeyId = typeof query.keyId === "string" ? query.keyId : undefined;
     const startTemplates = await entityService.listStartableTemplatesByType(groupId, selectedType);
     const selectedTemplate = selectedTemplateId ? startTemplates.find((t: any) => t.templateId === selectedTemplateId) : undefined;
     const effectiveConfig = resolveFormTypeConfig({
@@ -519,12 +590,22 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
       assignmentField: (selectedTemplate as any)?.assignmentField,
       keyField: (selectedTemplate as any)?.keyField,
     });
+    if (selectedKeyId && !selectedAssignmentId) {
+      selectedAssignmentId = await resolveAssignmentFromKey({
+        productsRepo,
+        keyField: effectiveConfig.key.field,
+        keyId: selectedKeyId,
+      });
+    }
     const assignmentOptions = await loadAssignmentOptions(productsRepo, effectiveConfig.id);
     const keyOptions = await loadKeyOptions({
       productsRepo,
       keyField: effectiveConfig.key.field,
       assignmentId: selectedAssignmentId,
     });
+    if (selectedKeyId && !keyOptions.some((item) => item.id === selectedKeyId)) {
+      selectedKeyId = undefined;
+    }
     const items = await entityService.listEntitiesForFormType(groupId, selectedType);
 
     return reply.view("pages/start_list", {
@@ -563,7 +644,7 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
   });
 
   app.get("/ui/orders", async (req, reply) => {
-    return reply.redirect("/ui/start?type=PRODUCTION_ORDER_BATCH", 302);
+    return reply.redirect("/ui/start?type=BATCH_PRODUCTION_ORDER", 302);
   });
 
   app.post("/ui-actions/orders/start", async (req, reply) => {
@@ -585,7 +666,7 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
     const entityId = await entityService.startByFormType({
       groupId,
       templateId: body.templateId,
-      formType: "PRODUCTION_ORDER_BATCH",
+      formType: "BATCH_PRODUCTION_ORDER",
       assignmentId: body.productId,
       keyId: body.batchId,
       currentUserId: req.currentUser!.id,
@@ -681,4 +762,22 @@ export function registerUiRoutes(app: FastifyInstance, deps: UiRouteDeps = {}) {
     });
     return reply.redirect(`/ui/entities/${params.id}`, 303);
   });
+
+  app.post("/ui-actions/entities/:id/delete", async (req, reply) => {
+    await requireDefaultGroupMembership({
+      userId: req.currentUser!.id,
+      allowed: ["ADMIN", "MANAGER"],
+      templateService,
+      requireGroupRoleFn,
+    });
+    const params = parseWithSchema(entityParamsSchema, req.params);
+    const groupId = await templateService.getDefaultGroupId();
+    await entityService.deleteEntity({
+      entityId: params.id,
+      groupId,
+      currentUserId: req.currentUser!.id,
+    });
+    return reply.redirect("/ui/start", 303);
+  });
+
 }

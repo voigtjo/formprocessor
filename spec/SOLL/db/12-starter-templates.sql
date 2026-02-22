@@ -43,9 +43,9 @@ values
   'Starter template for product + serial forms.',
   '[
     {"key":"product_id","type":"string","label":"Product","headerRole":"ASSIGNMENT","semantic":"WRITABLE_ENTITY","readonly":false,"required":true,"lookup":{"kind":"api","url":"/api/products?valid=true","valueField":"id","labelField":"name"}},
-    {"key":"serial_no","type":"string","label":"Serial No","headerRole":"KEY","semantic":"WRITABLE_ENTITY","readonly":false,"required":true,"lookup":{"kind":"api","url":"/api/serials?valid=true","valueField":"id","labelField":"code"}}
+    {"key":"serial_number_id","type":"string","label":"Serial No","headerRole":"KEY","semantic":"WRITABLE_ENTITY","readonly":false,"required":true,"lookup":{"kind":"api","url":"/api/serial-numbers?valid=true&product_id={product_id}","valueField":"id","labelField":"serial_no"}}
   ]'::jsonb,
-  '{"title":"Serial Production Form","sections":[{"title":"Main","rows":[{"cols":[{"field":"product_id"},{"field":"serial_no"}]}]}]}'::jsonb,
+  '{"title":"Serial Production Form","sections":[{"title":"Header","rows":[{"cols":[{"field":"product_id"},{"field":"serial_number_id"}]}]}]}'::jsonb,
   '[]'::jsonb
 ),
 (

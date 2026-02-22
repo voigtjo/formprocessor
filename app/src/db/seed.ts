@@ -7,12 +7,13 @@ import {
   batches,
   customers,
   customerOrders,
-  serials,
+  serialNumbers,
   starterTemplates,
 } from "./schema.js";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { normalizeTemplateType } from "../formTypes/registry.js";
+import { getStarterTemplate } from "../formTypes/starterTemplates.js";
 
 async function main() {
   const email = process.env.DEV_USER_EMAIL || "dev@local";
@@ -119,28 +120,42 @@ async function main() {
     }
   }
 
-  const serialSeeds = [
-    { productName: "Alpha Basic", serialNo: "SN-A-0001", valid: true },
-    { productName: "Alpha Basic", serialNo: "SN-A-0002", valid: true },
-    { productName: "Beta Plus", serialNo: "SN-B-0001", valid: true },
-    { productName: "Beta Plus", serialNo: "SN-B-LEGACY", valid: false },
-    { productName: "Gamma Core", serialNo: "SN-G-0001", valid: true },
-  ];
+  const validProducts = allProducts.filter((p: any) => p.valid);
+  for (let pIndex = 0; pIndex < validProducts.length; pIndex += 1) {
+    const product = validProducts[pIndex];
+    for (let i = 1; i <= 10; i += 1) {
+      const serialNo = `SN-${String(pIndex + 1).padStart(2, "0")}-${String(i).padStart(6, "0")}`;
+      const existing = await db
+        .select()
+        .from(serialNumbers)
+        .where(and(eq(serialNumbers.productId, product.id), eq(serialNumbers.serialNo, serialNo)))
+        .limit(1);
+      if (!existing.length) {
+        await db.insert(serialNumbers).values({
+          id: randomUUID(),
+          productId: product.id,
+          serialNo,
+          valid: true,
+          createdAt: new Date(),
+        });
+      }
+    }
+  }
 
-  for (const seed of serialSeeds) {
-    const product = byName.get(seed.productName);
-    if (!product) continue;
-    const existing = await db
+  const closedSerialProduct = validProducts[0];
+  if (closedSerialProduct) {
+    const closedSerialNo = `SN-${String(1).padStart(2, "0")}-999999`;
+    const existingClosed = await db
       .select()
-      .from(serials)
-      .where(and(eq(serials.productId, product.id), eq(serials.serialNo, seed.serialNo)))
+      .from(serialNumbers)
+      .where(and(eq(serialNumbers.productId, closedSerialProduct.id), eq(serialNumbers.serialNo, closedSerialNo)))
       .limit(1);
-    if (!existing.length) {
-      await db.insert(serials).values({
+    if (!existingClosed.length) {
+      await db.insert(serialNumbers).values({
         id: randomUUID(),
-        productId: product.id,
-        serialNo: seed.serialNo,
-        valid: seed.valid,
+        productId: closedSerialProduct.id,
+        serialNo: closedSerialNo,
+        valid: false,
         createdAt: new Date(),
       });
     }
@@ -194,109 +209,35 @@ async function main() {
     }
   }
 
-  const starterRows = [
-    {
-      templateType: normalizeTemplateType("PRODUCTION_ORDER_BATCH"),
-      name: "PRODUCTION_ORDER_BATCH",
-      description: "Starter template for product + batch forms.",
-      fieldDefsJson: [
-        {
-          key: "product_id",
-          type: "string",
-          label: "Product",
-          headerRole: "ASSIGNMENT",
-          semantic: "WRITABLE_ENTITY",
-          readonly: false,
-          required: true,
-          lookup: { kind: "api", url: "/api/products?valid=true", valueField: "id", labelField: "name" },
-        },
-        {
-          key: "batch_id",
-          type: "string",
-          label: "Batch",
-          headerRole: "KEY",
-          semantic: "WRITABLE_ENTITY",
-          readonly: false,
-          required: true,
-          lookup: { kind: "api", url: "/api/batches?valid=true", valueField: "id", labelField: "code" },
-        },
-      ],
-      layoutJson: {
-        title: "Batch Production Form",
-        sections: [{ title: "Main", rows: [{ cols: [{ field: "product_id" }, { field: "batch_id" }] }] }],
-      },
-      rulesJson: [],
-    },
-    {
-      templateType: normalizeTemplateType("PRODUCTION_ORDER_SERIAL"),
-      name: "PRODUCTION_ORDER_SERIAL",
-      description: "Starter template for product + serial forms.",
-      fieldDefsJson: [
-        {
-          key: "product_id",
-          type: "string",
-          label: "Product",
-          headerRole: "ASSIGNMENT",
-          semantic: "WRITABLE_ENTITY",
-          readonly: false,
-          required: true,
-          lookup: { kind: "api", url: "/api/products?valid=true", valueField: "id", labelField: "name" },
-        },
-        {
-          key: "serial_no",
-          type: "string",
-          label: "Serial No",
-          headerRole: "KEY",
-          semantic: "WRITABLE_ENTITY",
-          readonly: false,
-          required: true,
-          lookup: { kind: "api", url: "/api/serials?valid=true", valueField: "id", labelField: "code" },
-        },
-      ],
-      layoutJson: {
-        title: "Serial Production Form",
-        sections: [{ title: "Main", rows: [{ cols: [{ field: "product_id" }, { field: "serial_no" }] }] }],
-      },
-      rulesJson: [],
-    },
-    {
-      templateType: normalizeTemplateType("CUSTOMER_ORDER"),
-      name: "CUSTOMER_ORDER",
-      description: "Starter template for customer + order forms.",
-      fieldDefsJson: [
-        {
-          key: "customer_id",
-          type: "string",
-          label: "Customer",
-          headerRole: "ASSIGNMENT",
-          semantic: "WRITABLE_ENTITY",
-          readonly: false,
-          required: true,
-          lookup: { kind: "api", url: "/api/customers?valid=true", valueField: "id", labelField: "name" },
-        },
-        {
-          key: "customer_order_id",
-          type: "string",
-          label: "Order No",
-          headerRole: "KEY",
-          semantic: "WRITABLE_ENTITY",
-          readonly: false,
-          required: true,
-          lookup: {
-            kind: "api",
-            url: "/api/customer-orders?valid=true",
-            valueField: "id",
-            labelField: "order_no",
-          },
-        },
-      ],
-      layoutJson: {
-        title: "Customer Order Form",
-        sections: [{ title: "Main", rows: [{ cols: [{ field: "customer_id" }, { field: "customer_order_id" }] }] }],
-      },
-      rulesJson: [],
-    },
-  ];
+  const starterRows = await Promise.all([
+    (async () => {
+      const tpl = await getStarterTemplate("BATCH_PRODUCTION_ORDER");
+      return {
+        templateType: normalizeTemplateType("BATCH_PRODUCTION_ORDER"),
+        name: "BATCH_PRODUCTION_ORDER",
+        description: "Starter template for product + batch forms.",
+        ...tpl,
+      };
+    })(),
+    (async () => {
+      const tpl = await getStarterTemplate("SERIAL_PRODUCTION_ORDER");
+      return {
+        templateType: normalizeTemplateType("SERIAL_PRODUCTION_ORDER"),
+        name: "SERIAL_PRODUCTION_ORDER",
+        description: "Starter template for product + serial forms.",
+        ...tpl,
+      };
+    })(),
+    (async () => {
+      const tpl = await getStarterTemplate("CUSTOMER_ORDER");
+      return {
+        templateType: normalizeTemplateType("CUSTOMER_ORDER"),
+        name: "CUSTOMER_ORDER",
+        description: "Starter template for customer + order forms.",
+        ...tpl,
+      };
+    })(),
+  ]);
 
   for (const row of starterRows) {
     const existing = await db
@@ -310,9 +251,9 @@ async function main() {
         templateType: row.templateType,
         name: row.name,
         description: row.description,
-        fieldDefsJson: row.fieldDefsJson,
-        layoutJson: row.layoutJson,
-        rulesJson: row.rulesJson,
+        fieldDefsJson: row.fieldDefsJson as any,
+        layoutJson: row.layoutJson as any,
+        rulesJson: row.rulesJson as any,
         createdAt: new Date(),
       });
     }

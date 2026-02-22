@@ -1,41 +1,37 @@
 # Pages and UI Data Requirements (P0)
 
-## /ui (dashboard)
-- links to templates and entities
-
-## /ui/forms (templates list)
-- list templates owned by current group
-- show active PROD version (if any)
-- action: create -> /ui/forms/new
+## /ui/forms
+- list templates for current group
+- columns include template type + active TEST/PROD status
 
 ## /ui/forms/new
-- form: key, name, description (optional)
-- submit creates template + initial TEST 1.0.0
+- inputs: key, name, description, template_type
+- starter JSON prefilled from server-side starter generator by template type
 
 ## /ui/forms/:templateId
-- template meta
-- versions table (TEST and PROD) with active flag
-- buttons:
-  - edit latest TEST
-  - publish TEST
-  - publish PROD (promote/copy from latest TEST)
+- template metadata + versions
+- header config editor (`assignment_field`, `key_field`)
+- TEST JSON editor + preview
+- reset-to-starter uses template type + current header config
+- delete template blocked if entities exist
 
-## /ui/forms/:templateId/versions/:versionId/edit
-- textareas for:
-  - field_defs_json
-  - layout_json
-  - rules_json (optional)
-- server validates JSON shape with Zod (reject invalid)
-
-## /ui/entities
-- list entities for current group ordered by updated_at
-- show status and business_key
-- action: start entity from a template (choose template)
+## /ui/start
+- form type dropdown (`BATCH_PRODUCTION_ORDER`, `SERIAL_PRODUCTION_ORDER`, `CUSTOMER_ORDER`)
+- template dropdown filtered by selected form type + active TEST
+- assignment dropdown (select placeholder)
+- key dropdown
+  - assignment-first: filtered keys
+  - key-first: infer assignment
+- start creates DRAFT entity with ID refs + snapshot labels in `data_json`
+- existing table shows template/version/status/assignment/key/created
 
 ## /ui/entities/:entityId
-- show status + locked template/version
-- show rendered form (from layout_json and field_defs_json) and current data_json
-- actions depending on status and role:
-  - save draft
-  - submit
-  - approve/reject
+- top shows template/type/version/status
+- header box shows assignment + key snapshot labels
+- business key shown separately (optional)
+- actions:
+  - DRAFT: Save, Submit, Delete
+  - SUBMITTED: Approve, Reject
+  - APPROVED_FINAL/REJECTED: read-only
+- no standalone "Finalize key" button
+- approve transition finalizes selected key row (`valid=false`) in key table

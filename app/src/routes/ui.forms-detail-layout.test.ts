@@ -29,9 +29,9 @@ describe("GET /ui/forms/:id", () => {
           id: "11111111-1111-1111-1111-111111111111",
           key: "serial",
           name: "Serial Template",
-          templateType: "PRODUCTION_ORDER_SERIAL",
+          templateType: "SERIAL_PRODUCTION_ORDER",
           assignmentField: "product_id",
-          keyField: "serial_no",
+          keyField: "serial_number_id",
           createdAt: new Date("2026-01-01T00:00:00.000Z"),
         },
         versions: [

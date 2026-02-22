@@ -3,11 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { EntityService } from "./entityService.js";
 
 describe("EntityService.startByFormType", () => {
-  it("creates batch production entity with business_key and header payload", async () => {
+  it("creates batch production entity with id + snapshot header payload", async () => {
     const repo = {
       getTemplateById: vi.fn(async () => ({
         id: "tpl-1",
-        templateType: "PRODUCTION_ORDER_BATCH",
+        templateType: "BATCH_PRODUCTION_ORDER",
         assignmentField: "product_id",
         keyField: "batch_id",
       })),
@@ -28,7 +28,7 @@ describe("EntityService.startByFormType", () => {
     const entityId = await service.startByFormType({
       groupId: "group-1",
       templateId: "tpl-1",
-      formType: "PRODUCTION_ORDER_BATCH",
+      formType: "BATCH_PRODUCTION_ORDER",
       assignmentId: "prod-1",
       keyId: "batch-1",
       currentUserId: "user-1",
@@ -39,21 +39,21 @@ describe("EntityService.startByFormType", () => {
       templateId: "tpl-1",
       templateVersionId: "ver-1",
       ownerGroupId: "group-1",
-      businessKey: "ALPHA-001",
       createdBy: "user-1",
       dataJson: {
         _header: {
           assignment: { type: "product", id: "prod-1", label: "Alpha Basic" },
           key: { type: "batch", id: "batch-1", label: "ALPHA-001" },
         },
-        assignment_product_id: "prod-1",
         product_id: "prod-1",
         batch_id: "batch-1",
+        product_name: "Alpha Basic",
+        batch_code: "ALPHA-001",
       },
     });
   });
 
-  it("creates customer order entity with business_key and _header payload", async () => {
+  it("creates customer order entity with id + snapshot header payload", async () => {
     const repo = {
       getTemplateById: vi.fn(async () => ({
         id: "tpl-c-1",
@@ -93,7 +93,6 @@ describe("EntityService.startByFormType", () => {
       templateId: "tpl-c-1",
       templateVersionId: "ver-c-1",
       ownerGroupId: "group-1",
-      businessKey: "CO-1001",
       createdBy: "user-1",
       dataJson: {
         _header: {
@@ -102,6 +101,8 @@ describe("EntityService.startByFormType", () => {
         },
         customer_id: "cust-1",
         customer_order_id: "co-1",
+        customer_name: "Acme Corp",
+        order_no: "CO-1001",
       },
     });
   });

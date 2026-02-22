@@ -65,7 +65,7 @@ describe("GET /ui/entities/:id", () => {
           assignmentLabel: "Alpha Basic",
           keyLabel: "ALPHA-001",
         },
-        template: { name: "Invoice Template", key: "invoice", type: "PRODUCTION_ORDER" },
+        template: { name: "Invoice Template", key: "invoice", type: "BATCH_PRODUCTION_ORDER" },
         fieldDefs,
         layout,
         values: { product_id: "p1" },

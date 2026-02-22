@@ -21,13 +21,14 @@ function buildTestApp(userId: string, role: GroupRole) {
     publishTest: vi.fn(async () => undefined),
     publishProd: vi.fn(async () => undefined),
     updateTemplateHeaderConfig: vi.fn(async () => undefined),
+    deleteTemplate: vi.fn(async () => undefined),
     listTemplatesForUserDefaultGroup: vi.fn(async () => []),
     getTemplateDetail: vi.fn(async () => ({
       template: {
         id: TEMPLATE_ID,
         key: "tpl",
         name: "Template",
-        templateType: "PRODUCTION_ORDER_BATCH",
+        templateType: "BATCH_PRODUCTION_ORDER",
         createdAt: new Date(),
       },
       versions: [],
@@ -59,6 +60,8 @@ function buildTestApp(userId: string, role: GroupRole) {
     submitEntity: vi.fn(async () => undefined),
     approveEntity: vi.fn(async () => undefined),
     rejectEntity: vi.fn(async () => undefined),
+    deleteEntity: vi.fn(async () => undefined),
+    finalizeEntityKey: vi.fn(async () => undefined),
   } as unknown as EntityService;
 
   const app = Fastify();
@@ -216,6 +219,36 @@ describe("POST /ui-actions/forms/:id/publish-prod", () => {
   });
 });
 
+describe("POST /ui-actions/forms/:id/delete", () => {
+  it("deletes template and redirects to list", async () => {
+    const { app, templateService } = buildTestApp(MANAGER_USER_ID, "MANAGER");
+    await app.ready();
+
+    const res = await post(app, `/ui-actions/forms/${TEMPLATE_ID}/delete`);
+
+    expect(res.statusCode).toBe(303);
+    expect(res.headers.location).toBe("/ui/forms");
+    expect(templateService.deleteTemplate).toHaveBeenCalledWith(TEMPLATE_ID);
+    await app.close();
+  });
+
+  it("redirects back with error when entities exist", async () => {
+    const { app, templateService } = buildTestApp(MANAGER_USER_ID, "MANAGER");
+    (templateService.deleteTemplate as any).mockImplementationOnce(async () => {
+      const err: any = new Error("Template cannot be deleted because entities exist");
+      err.statusCode = 409;
+      throw err;
+    });
+    await app.ready();
+
+    const res = await post(app, `/ui-actions/forms/${TEMPLATE_ID}/delete`);
+
+    expect(res.statusCode).toBe(303);
+    expect(res.headers.location).toContain(`/ui/forms/${TEMPLATE_ID}?error=`);
+    await app.close();
+  });
+});
+
 describe("POST /ui-actions/forms/:id/reset-starter", () => {
   it("overwrites TEST JSON from starter template deterministically", async () => {
     const { app, templateService } = buildTestApp(MANAGER_USER_ID, "MANAGER");
@@ -224,7 +257,7 @@ describe("POST /ui-actions/forms/:id/reset-starter", () => {
         id: TEMPLATE_ID,
         key: "serial",
         name: "Serial Template",
-        templateType: "PRODUCTION_ORDER_SERIAL",
+        templateType: "BATCH_PRODUCTION_ORDER",
         createdAt: new Date(),
       },
       versions: [],
@@ -307,7 +340,7 @@ describe("POST /ui-actions/orders/start", () => {
     expect(entityService.startByFormType).toHaveBeenCalledWith({
       groupId: DEFAULT_GROUP_ID,
       templateId: TEMPLATE_ID,
-      formType: "PRODUCTION_ORDER_BATCH",
+      formType: "BATCH_PRODUCTION_ORDER",
       assignmentId: "11111111-1111-1111-1111-111111111111",
       keyId: "22222222-2222-2222-2222-222222222222",
       currentUserId: MANAGER_USER_ID,
@@ -443,6 +476,24 @@ describe("POST /ui-actions/entities/:id/approve", () => {
 
     const res = await post(app, `/ui-actions/entities/${ENTITY_ID}/approve`);
     expect(res.statusCode).toBe(409);
+    await app.close();
+  });
+});
+
+describe("POST /ui-actions/entities/:id/delete", () => {
+  it("deletes draft entity and redirects to /ui/start", async () => {
+    const { app, entityService } = buildTestApp(MANAGER_USER_ID, "MANAGER");
+    await app.ready();
+
+    const res = await post(app, `/ui-actions/entities/${ENTITY_ID}/delete`);
+
+    expect(res.statusCode).toBe(303);
+    expect(res.headers.location).toBe("/ui/start");
+    expect(entityService.deleteEntity).toHaveBeenCalledWith({
+      entityId: ENTITY_ID,
+      groupId: DEFAULT_GROUP_ID,
+      currentUserId: MANAGER_USER_ID,
+    });
     await app.close();
   });
 });

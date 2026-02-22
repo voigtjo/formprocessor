@@ -80,7 +80,10 @@ export class TemplateService {
 
     const versions = await this.repo.listVersionsForTemplate(args.templateId);
     const latestTest = versions.find((v) => v.channel === "TEST");
-    const starter = await getStarterTemplate(template.templateType);
+    const starter = await getStarterTemplate(template.templateType, {
+      assignmentField: template.assignmentField,
+      keyField: template.keyField,
+    });
     const fieldDefs = Array.isArray(latestTest?.fieldDefsJson) && latestTest.fieldDefsJson.length
       ? latestTest.fieldDefsJson
       : starter.fieldDefsJson;
@@ -161,5 +164,23 @@ export class TemplateService {
     }
 
     await this.repo.publishProdFromLatestTest(templateId, currentUserId);
+  }
+
+  async deleteTemplate(templateId: string) {
+    const template = await this.repo.getTemplateById(templateId);
+    if (!template) {
+      const err: any = new Error("Template not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const hasEntities = await this.repo.hasEntitiesForTemplate(templateId);
+    if (hasEntities) {
+      const err: any = new Error("Template cannot be deleted because entities exist");
+      err.statusCode = 409;
+      throw err;
+    }
+
+    await this.repo.deleteTemplate(templateId);
   }
 }

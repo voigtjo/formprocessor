@@ -1,6 +1,6 @@
 export const FORM_TYPES = [
-  "PRODUCTION_ORDER_BATCH",
-  "PRODUCTION_ORDER_SERIAL",
+  "BATCH_PRODUCTION_ORDER",
+  "SERIAL_PRODUCTION_ORDER",
   "CUSTOMER_ORDER",
 ] as const;
 
@@ -23,7 +23,7 @@ export type FormTypeConfig = {
   };
   key: FieldConfig & {
     kind: KeyKind;
-    lookupUrl: "/api/batches?valid=true" | "/api/serials?valid=true" | "/api/customer-orders?valid=true";
+    lookupUrl: "/api/batches?valid=true" | "/api/serial-numbers?valid=true" | "/api/customer-orders?valid=true";
     dependsOnAssignment: boolean;
   };
   autoLoadKeyOptions: boolean;
@@ -40,13 +40,19 @@ const KEY_BY_FIELD: Record<string, Omit<FormTypeConfig["key"], "dependsOnAssignm
     field: "serial_id",
     kind: "serial",
     label: "Serial No",
-    lookupUrl: "/api/serials?valid=true",
+    lookupUrl: "/api/serial-numbers?valid=true",
   },
   serial_no: {
     field: "serial_no",
     kind: "serial",
     label: "Serial No",
-    lookupUrl: "/api/serials?valid=true",
+    lookupUrl: "/api/serial-numbers?valid=true",
+  },
+  serial_number_id: {
+    field: "serial_number_id",
+    kind: "serial",
+    label: "Serial No",
+    lookupUrl: "/api/serial-numbers?valid=true",
   },
   customer_order_id: {
     field: "customer_order_id",
@@ -72,25 +78,25 @@ const ASSIGNMENT_BY_FIELD: Record<string, FormTypeConfig["assignment"]> = {
 };
 
 export const FORM_TYPE_REGISTRY: Record<FormTypeId, FormTypeConfig> = {
-  PRODUCTION_ORDER_BATCH: {
-    id: "PRODUCTION_ORDER_BATCH",
+  BATCH_PRODUCTION_ORDER: {
+    id: "BATCH_PRODUCTION_ORDER",
     label: "Batch Production Order",
     assignment: ASSIGNMENT_BY_FIELD.product_id,
     key: {
       ...KEY_BY_FIELD.batch_id,
       dependsOnAssignment: true,
     },
-    autoLoadKeyOptions: false,
+    autoLoadKeyOptions: true,
   },
-  PRODUCTION_ORDER_SERIAL: {
-    id: "PRODUCTION_ORDER_SERIAL",
+  SERIAL_PRODUCTION_ORDER: {
+    id: "SERIAL_PRODUCTION_ORDER",
     label: "Serial Production Order",
     assignment: ASSIGNMENT_BY_FIELD.product_id,
     key: {
-      ...KEY_BY_FIELD.serial_no,
+      ...KEY_BY_FIELD.serial_number_id,
       dependsOnAssignment: true,
     },
-    autoLoadKeyOptions: false,
+    autoLoadKeyOptions: true,
   },
   CUSTOMER_ORDER: {
     id: "CUSTOMER_ORDER",
@@ -108,6 +114,8 @@ export type TemplateTypeLike =
   | FormTypeId
   | "BATCH_PRODUCTION_ORDER"
   | "SERIAL_PRODUCTION_ORDER"
+  | "PRODUCTION_ORDER_BATCH"
+  | "PRODUCTION_ORDER_SERIAL"
   | "PRODUCTION_ORDER"
   | "ORDER"
   | "GENERIC"
@@ -116,21 +124,13 @@ export type TemplateTypeLike =
   | undefined;
 
 export function normalizeTemplateType(value: TemplateTypeLike): FormTypeId {
-  if (
-    value === "PRODUCTION_ORDER" ||
-    value === "ORDER" ||
-    value === "BATCH_PRODUCTION_ORDER" ||
-    value === "PRODUCTION_ORDER_BATCH"
-  ) {
-    return "PRODUCTION_ORDER_BATCH";
-  }
-  if (value === "SERIAL_PRODUCTION_ORDER" || value === "PRODUCTION_ORDER_SERIAL") {
-    return "PRODUCTION_ORDER_SERIAL";
-  }
   if (value === "CUSTOMER_ORDER") {
     return "CUSTOMER_ORDER";
   }
-  return "PRODUCTION_ORDER_BATCH";
+  if (value === "SERIAL_PRODUCTION_ORDER" || value === "PRODUCTION_ORDER_SERIAL") {
+    return "SERIAL_PRODUCTION_ORDER";
+  }
+  return "BATCH_PRODUCTION_ORDER";
 }
 
 export function resolveFormTypeConfig(args: {
@@ -149,16 +149,16 @@ export function resolveFormTypeConfig(args: {
   const effectiveId: FormTypeId =
     assignment.field === "customer_id"
       ? "CUSTOMER_ORDER"
-      : key.field === "serial_id" || key.field === "serial_no"
-        ? "PRODUCTION_ORDER_SERIAL"
-        : "PRODUCTION_ORDER_BATCH";
+      : key.field === "serial_id" || key.field === "serial_no" || key.field === "serial_number_id"
+        ? "SERIAL_PRODUCTION_ORDER"
+        : "BATCH_PRODUCTION_ORDER";
 
   return {
-    ...base,
+    ...FORM_TYPE_REGISTRY[effectiveId],
     id: effectiveId,
     assignment,
     key,
-    autoLoadKeyOptions: effectiveId === "CUSTOMER_ORDER" ? true : base.autoLoadKeyOptions,
+    autoLoadKeyOptions: true,
   } satisfies FormTypeConfig;
 }
 

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, timestamp, jsonb, integer, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, boolean, timestamp, jsonb, integer, pgEnum, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const userRoleGlobal = pgEnum("user_role_global", ["GLOBAL", "USER"]);
 export const groupRole = pgEnum("group_role", ["ADMIN", "MANAGER", "EDITOR", "MEMBER"]);
@@ -131,6 +131,21 @@ export const customerOrders = pgTable("customer_orders", {
   valid: boolean("valid").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const serialNumbers = pgTable(
+  "serial_numbers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id").notNull(),
+    serialNo: text("serial_no").notNull(),
+    valid: boolean("valid").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    serialNumbersProductSerialUnique: uniqueIndex("serial_numbers_product_serial_uq").on(table.productId, table.serialNo),
+    serialNumbersProductValidSerialIdx: index("serial_numbers_product_valid_serial_idx").on(table.productId, table.valid, table.serialNo),
+  }),
+);
 
 export const serials = pgTable("serials", {
   id: uuid("id").primaryKey().defaultRandom(),

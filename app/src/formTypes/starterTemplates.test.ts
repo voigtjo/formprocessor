@@ -4,24 +4,21 @@ import { getStarterTemplate } from "./starterTemplates.js";
 
 describe("getStarterTemplate", () => {
   it("returns batch production starter with product_id + batch_id", async () => {
-    const repo = { getByTemplateType: async () => null } as any;
-    const tpl = await getStarterTemplate("PRODUCTION_ORDER_BATCH", repo);
+    const tpl = await getStarterTemplate("BATCH_PRODUCTION_ORDER");
     const keys = (tpl.fieldDefsJson as Array<{ key: string }>).map((f) => f.key);
     expect(keys).toContain("product_id");
     expect(keys).toContain("batch_id");
   });
 
-  it("returns serial production starter with product_id + serial_no", async () => {
-    const repo = { getByTemplateType: async () => null } as any;
-    const tpl = await getStarterTemplate("PRODUCTION_ORDER_SERIAL", repo);
+  it("returns serial production starter with serial_number_id", async () => {
+    const tpl = await getStarterTemplate("SERIAL_PRODUCTION_ORDER");
     const keys = (tpl.fieldDefsJson as Array<{ key: string }>).map((f) => f.key);
     expect(keys).toContain("product_id");
-    expect(keys).toContain("serial_no");
+    expect(keys).toContain("serial_number_id");
   });
 
   it("returns customer order starter with customer_id + customer_order_id", async () => {
-    const repo = { getByTemplateType: async () => null } as any;
-    const tpl = await getStarterTemplate("CUSTOMER_ORDER", repo);
+    const tpl = await getStarterTemplate("CUSTOMER_ORDER");
     const keys = (tpl.fieldDefsJson as Array<{ key: string }>).map((f) => f.key);
     expect(keys).toContain("customer_id");
     expect(keys).toContain("customer_order_id");

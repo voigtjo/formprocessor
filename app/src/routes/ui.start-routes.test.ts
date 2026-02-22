@@ -48,13 +48,16 @@ function buildDeps() {
   const productsRepo = {
     listProducts: vi.fn(async () => []),
     listBatches: vi.fn(async () => []),
-    listSerials: vi.fn(async () => []),
+    listSerialNumbers: vi.fn(async () => []),
+    getBatchById: vi.fn(async () => null),
+    getSerialNumberById: vi.fn(async () => null),
     listCustomers: vi.fn(async () => [
       { id: "cccccccc-cccc-cccc-cccc-cccccccccccc", name: "Acme Corp" },
     ]),
     listCustomerOrders: vi.fn(async () => [
       { id: "dddddddd-dddd-dddd-dddd-dddddddddddd", order_no: "CO-1001" },
     ]),
+    getCustomerOrderById: vi.fn(async () => null),
   } as unknown as ProductsRepo;
 
   const requireGroupRoleFn = vi.fn(async (args: { allowed: GroupRole[] }) => {
@@ -71,6 +74,86 @@ function buildDeps() {
 }
 
 describe("/ui/start", () => {
+  it("auto-populates production assignment when batch key is selected first", async () => {
+    const deps = buildDeps();
+    (deps.entityService.listStartableTemplatesByType as any).mockResolvedValueOnce([
+      {
+        templateId: "11111111-1111-1111-1111-111111111111",
+        key: "prod_order",
+        name: "Production Order",
+        templateType: "BATCH_PRODUCTION_ORDER",
+        assignmentField: "product_id",
+        keyField: "batch_id",
+      },
+    ]);
+    (deps.productsRepo.listProducts as any).mockResolvedValueOnce([
+      { id: "99999999-9999-9999-9999-999999999999", name: "Alpha Basic" },
+    ]);
+    (deps.productsRepo.getBatchById as any).mockResolvedValueOnce({
+      id: "88888888-8888-8888-8888-888888888888",
+      productId: "99999999-9999-9999-9999-999999999999",
+      code: "ALPHA-001",
+      valid: true,
+    });
+    (deps.productsRepo.listBatches as any).mockResolvedValueOnce([
+      { id: "88888888-8888-8888-8888-888888888888", code: "ALPHA-001" },
+    ]);
+
+    const app = Fastify();
+    app.register(formbody);
+    app.register(view, { engine: { ejs }, root: path.join(__dirname, "../views"), viewExt: "ejs" });
+    app.addHook("preHandler", async (req) => {
+      req.currentUser = { id: "22222222-2222-2222-2222-222222222222", email: "manager@local" };
+    });
+    registerUiRoutes(app, deps);
+    await app.ready();
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/ui/start?type=BATCH_PRODUCTION_ORDER&templateId=11111111-1111-1111-1111-111111111111&keyId=88888888-8888-8888-8888-888888888888",
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.productsRepo.listBatches).toHaveBeenCalledWith({
+      productId: "99999999-9999-9999-9999-999999999999",
+      valid: true,
+    });
+    expect(res.body).toContain('value="99999999-9999-9999-9999-999999999999" selected');
+    await app.close();
+  });
+
+  it("auto-populates assignment when key is selected first", async () => {
+    const deps = buildDeps();
+    (deps.productsRepo.getCustomerOrderById as any).mockResolvedValueOnce({
+      id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      customerId: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      orderNo: "CO-1001",
+      valid: true,
+    });
+    const app = Fastify();
+    app.register(formbody);
+    app.register(view, { engine: { ejs }, root: path.join(__dirname, "../views"), viewExt: "ejs" });
+    app.addHook("preHandler", async (req) => {
+      req.currentUser = { id: "22222222-2222-2222-2222-222222222222", email: "manager@local" };
+    });
+    registerUiRoutes(app, deps);
+    await app.ready();
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/ui/start?type=CUSTOMER_ORDER&templateId=11111111-1111-1111-1111-111111111111&keyId=dddddddd-dddd-dddd-dddd-dddddddddddd",
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.productsRepo.listCustomerOrders).toHaveBeenCalledWith({
+      customerId: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      valid: true,
+    });
+    expect(res.body).toContain('name="assignmentId"');
+    expect(res.body).toContain('value="cccccccc-cccc-cccc-cccc-cccccccccccc" selected');
+    await app.close();
+  });
+
   it("loads dependent key options when assignment is selected", async () => {
     const deps = buildDeps();
     const app = Fastify();

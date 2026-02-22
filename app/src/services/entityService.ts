@@ -29,14 +29,14 @@ export class EntityService {
   }
 
   async listStartableOrderTemplates(groupId: string) {
-    return this.listStartableTemplatesByType(groupId, "PRODUCTION_ORDER_BATCH");
+    return this.listStartableTemplatesByType(groupId, "BATCH_PRODUCTION_ORDER");
   }
 
   async listOrderEntitiesForGroup(groupId: string) {
     const items = await this.repo.listEntitiesForGroup(groupId);
     return items.filter((it: any) => {
       const type = normalizeTemplateType(it.templateType);
-      return type === "PRODUCTION_ORDER_BATCH" || type === "PRODUCTION_ORDER_SERIAL";
+      return type === "BATCH_PRODUCTION_ORDER" || type === "SERIAL_PRODUCTION_ORDER";
     });
   }
 
@@ -86,7 +86,7 @@ export class EntityService {
     return this.startByFormType({
       groupId: args.groupId,
       templateId: args.templateId,
-      formType: "PRODUCTION_ORDER_BATCH",
+      formType: "BATCH_PRODUCTION_ORDER",
       assignmentId: args.productId,
       keyId: args.batchId,
       currentUserId: args.currentUserId,
@@ -140,6 +140,12 @@ export class EntityService {
 
     const assignmentMeta = await this.resolveAssignmentMeta(config.assignment.kind, args.assignmentId);
     const keyMeta = await this.resolveKeyMeta(config.key.kind, args.keyId, args.assignmentId);
+    const assignmentSnapshotField = config.assignment.kind === "product" ? "product_name" : "customer_name";
+    const keySnapshotField = config.key.kind === "batch"
+      ? "batch_code"
+      : config.key.kind === "serial"
+        ? "serial_no"
+        : "order_no";
 
     const dataJson: Record<string, unknown> = {
       _header: {
@@ -148,16 +154,14 @@ export class EntityService {
       },
       [config.assignment.field]: args.assignmentId,
       [config.key.field]: args.keyId,
+      [assignmentSnapshotField]: assignmentMeta.label,
+      [keySnapshotField]: keyMeta.label,
     };
-    if (config.assignment.field === "product_id") {
-      dataJson.assignment_product_id = args.assignmentId;
-    }
 
     return this.repo.insertEntity({
       templateId: args.templateId,
       templateVersionId: activeTestVersion.id,
       ownerGroupId: args.groupId,
-      businessKey: keyMeta.label,
       createdBy: args.currentUserId,
       dataJson,
     });
@@ -212,18 +216,28 @@ export class EntityService {
     });
     const assignmentId =
       assignmentIdFromHeader ??
-      (assignmentFieldKey ? ((dataJson[assignmentFieldKey] as string | undefined) ?? undefined) : undefined) ??
-      ((dataJson.assignment_product_id as string | undefined) ?? undefined);
+      (assignmentFieldKey ? ((dataJson[assignmentFieldKey] as string | undefined) ?? undefined) : undefined);
     const keyId =
       keyIdFromHeader ??
-      (keyFieldKey ? ((dataJson[keyFieldKey] as string | undefined) ?? undefined) : undefined) ??
-      ((dataJson.batch_id as string | undefined) ?? undefined);
+      (keyFieldKey ? ((dataJson[keyFieldKey] as string | undefined) ?? undefined) : undefined);
 
     const assignmentLabelFromHeader =
       (typeof headerAssignment.label === "string" && headerAssignment.label) || null;
     const keyLabelFromHeader = (typeof headerKey.label === "string" && headerKey.label) || null;
-    const assignmentLabel = assignmentLabelFromHeader ?? (await this.getAssignmentLabel(resolvedType.assignment.kind, assignmentId));
-    const keyLabel = keyLabelFromHeader ?? (await this.getKeyLabel(resolvedType.key.kind, keyId));
+    const assignmentSnapshotField = resolvedType.assignment.kind === "product" ? "product_name" : "customer_name";
+    const keySnapshotField = resolvedType.key.kind === "batch"
+      ? "batch_code"
+      : resolvedType.key.kind === "serial"
+        ? "serial_no"
+        : "order_no";
+    const assignmentLabelFromSnapshot = typeof dataJson[assignmentSnapshotField] === "string"
+      ? (dataJson[assignmentSnapshotField] as string)
+      : null;
+    const keyLabelFromSnapshot = typeof dataJson[keySnapshotField] === "string"
+      ? (dataJson[keySnapshotField] as string)
+      : null;
+    const assignmentLabel = assignmentLabelFromSnapshot ?? assignmentLabelFromHeader ?? (await this.getAssignmentLabel(resolvedType.assignment.kind, assignmentId));
+    const keyLabel = keyLabelFromSnapshot ?? keyLabelFromHeader ?? (await this.getKeyLabel(resolvedType.key.kind, keyId));
 
     const hasHeader = Boolean(headerAssignment.id && headerKey.id);
     const effectiveFieldDefs =
@@ -294,7 +308,7 @@ export class EntityService {
     }
 
     if (kind === "serial") {
-      const serial = await this.productsRepo.getSerialById(keyId);
+      const serial = await this.productsRepo.getSerialNumberById(keyId);
       if (!serial || !serial.valid || serial.productId !== assignmentId) {
         const err: any = new Error("Invalid serial selection");
         err.statusCode = 400;
@@ -329,7 +343,7 @@ export class EntityService {
       return row?.code ?? null;
     }
     if (kind === "serial") {
-      const row = await this.productsRepo.getSerialById(id);
+      const row = await this.productsRepo.getSerialNumberById(id);
       return row?.serialNo ?? null;
     }
     const row = await this.productsRepo.getCustomerOrderById(id);
@@ -392,6 +406,7 @@ export class EntityService {
       throw err;
     }
 
+    await this.finalizeKeyOnApprove(detail);
     await this.repo.updateEntityStatus(args.entityId, "APPROVED_FINAL");
     await this.repo.insertApproval({
       entityId: args.entityId,
@@ -428,6 +443,48 @@ export class EntityService {
     });
   }
 
+  async deleteEntity(args: { entityId: string; groupId: string; currentUserId: string }) {
+    const detail = await this.getEntityDetail(args.entityId, args.groupId);
+    if (detail.entity.status !== "DRAFT") {
+      const err: any = new Error("Delete allowed only from DRAFT");
+      err.statusCode = 409;
+      throw err;
+    }
+
+    const deleted = await this.repo.deleteEntity(args.entityId, args.groupId);
+    if (!deleted) {
+      const err: any = new Error("Entity not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    await this.repo.insertAuditLog({
+      actorUserId: args.currentUserId,
+      eventType: "entity.deleted",
+      entityType: "entity",
+      entityId: args.entityId,
+    });
+  }
+
+  async resolveAssignmentIdForKey(args: {
+    keyKind: "batch" | "serial" | "customer_order";
+    keyId: string;
+  }) {
+    if (args.keyKind === "batch") {
+      const row = await this.productsRepo.getBatchById(args.keyId);
+      if (!row || !row.valid) return null;
+      return row.productId;
+    }
+    if (args.keyKind === "serial") {
+      const row = await this.productsRepo.getSerialNumberById(args.keyId);
+      if (!row || !row.valid) return null;
+      return row.productId;
+    }
+    const row = await this.productsRepo.getCustomerOrderById(args.keyId);
+    if (!row || !row.valid) return null;
+    return row.customerId;
+  }
+
   private buildRenderValues(
     fieldDefs: FieldDef[],
     dataJson: Record<string, unknown>,
@@ -444,6 +501,28 @@ export class EntityService {
       values[field.key] = dataJson[field.key];
     }
     return values;
+  }
+
+  private async finalizeKeyOnApprove(detail: Awaited<ReturnType<EntityService["getEntityDetail"]>>) {
+    const config = resolveFormTypeConfig({
+      templateType: detail.template.type,
+      assignmentField: detail.template.assignmentField,
+      keyField: detail.template.keyField,
+    });
+    const dataJson = asRecord(detail.entity.dataJson);
+    const keyIdValue = dataJson[config.key.field];
+    const keyId = typeof keyIdValue === "string" ? keyIdValue : undefined;
+    if (!keyId) return;
+
+    if (config.key.kind === "batch") {
+      await this.productsRepo.finalizeBatch(keyId);
+      return;
+    }
+    if (config.key.kind === "serial") {
+      await this.productsRepo.finalizeSerialNumber(keyId);
+      return;
+    }
+    await this.productsRepo.finalizeCustomerOrder(keyId);
   }
 }
 

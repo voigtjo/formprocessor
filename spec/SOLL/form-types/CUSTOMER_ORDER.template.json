@@ -25,7 +25,7 @@
       "required": true,
       "lookup": {
         "kind": "api",
-        "url": "/api/customer-orders?valid=true",
+        "url": "/api/customer-orders?valid=true&customer_id={customer_id}",
         "valueField": "id",
         "labelField": "order_no"
       }
@@ -35,7 +35,7 @@
     "title": "Customer Order Form",
     "sections": [
       {
-        "title": "Main",
+        "title": "Header",
         "rows": [
           {
             "cols": [

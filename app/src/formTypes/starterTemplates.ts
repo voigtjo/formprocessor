@@ -1,5 +1,3 @@
-import type { StarterTemplateRepo } from "../repos/starterTemplateRepo.js";
-import { StarterTemplateRepo as DefaultStarterTemplateRepo } from "../repos/starterTemplateRepo.js";
 import { normalizeTemplateType, type FormTypeId } from "./registry.js";
 
 type StarterTemplateData = {
@@ -8,143 +6,44 @@ type StarterTemplateData = {
   rulesJson: unknown[];
 };
 
-function ensureLayout(layoutJson: unknown, typeLabel: string): Record<string, unknown> {
-  if (!layoutJson || typeof layoutJson !== "object" || Array.isArray(layoutJson)) {
-    return { title: `${typeLabel} Form`, sections: [] };
-  }
-  const candidate = { ...(layoutJson as Record<string, unknown>) };
-  if (typeof candidate.title !== "string" || !candidate.title.trim()) {
-    candidate.title = `${typeLabel} Form`;
-  }
-  if (!Array.isArray(candidate.sections)) {
-    candidate.sections = [];
-  }
-  return candidate;
-}
-
-function ensureArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-const FALLBACK_BY_TYPE: Record<FormTypeId, StarterTemplateData> = {
-  PRODUCTION_ORDER_BATCH: {
-    fieldDefsJson: [
-      {
-        key: "product_id",
-        type: "string",
-        label: "Product",
-        headerRole: "ASSIGNMENT",
-        semantic: "WRITABLE_ENTITY",
-        readonly: false,
-        required: true,
-        lookup: {
-          kind: "api",
-          url: "/api/products?valid=true",
-          valueField: "id",
-          labelField: "name",
-        },
-      },
-      {
-        key: "batch_id",
-        type: "string",
-        label: "Batch",
-        headerRole: "KEY",
-        semantic: "WRITABLE_ENTITY",
-        readonly: false,
-        required: true,
-        lookup: {
-          kind: "api",
-          url: "/api/batches?valid=true",
-          valueField: "id",
-          labelField: "code",
-        },
-      },
-    ],
-    layoutJson: {
-      title: "Batch Production Form",
-      sections: [{ title: "Main", rows: [{ cols: [{ field: "product_id" }, { field: "batch_id" }] }] }],
-    },
-    rulesJson: [],
-  },
-  PRODUCTION_ORDER_SERIAL: {
-    fieldDefsJson: [
-      {
-        key: "product_id",
-        type: "string",
-        label: "Product",
-        headerRole: "ASSIGNMENT",
-        semantic: "WRITABLE_ENTITY",
-        readonly: false,
-        required: true,
-        lookup: {
-          kind: "api",
-          url: "/api/products?valid=true",
-          valueField: "id",
-          labelField: "name",
-        },
-      },
-      {
-        key: "serial_no",
-        type: "string",
-        label: "Serial No",
-        headerRole: "KEY",
-        semantic: "WRITABLE_ENTITY",
-        readonly: false,
-        required: true,
-        lookup: {
-          kind: "api",
-          url: "/api/serials?valid=true",
-          valueField: "id",
-          labelField: "code",
-        },
-      },
-    ],
-    layoutJson: {
-      title: "Serial Production Form",
-      sections: [{ title: "Main", rows: [{ cols: [{ field: "product_id" }, { field: "serial_no" }] }] }],
-    },
-    rulesJson: [],
-  },
-  CUSTOMER_ORDER: {
-    fieldDefsJson: [
-      {
-        key: "customer_id",
-        type: "string",
-        label: "Customer",
-        headerRole: "ASSIGNMENT",
-        semantic: "WRITABLE_ENTITY",
-        readonly: false,
-        required: true,
-        lookup: {
-          kind: "api",
-          url: "/api/customers?valid=true",
-          valueField: "id",
-          labelField: "name",
-        },
-      },
-      {
-        key: "customer_order_id",
-        type: "string",
-        label: "Order No",
-        headerRole: "KEY",
-        semantic: "WRITABLE_ENTITY",
-        readonly: false,
-        required: true,
-        lookup: {
-          kind: "api",
-          url: "/api/customer-orders?valid=true",
-          valueField: "id",
-          labelField: "order_no",
-        },
-      },
-    ],
-    layoutJson: {
-      title: "Customer Order Form",
-      sections: [{ title: "Main", rows: [{ cols: [{ field: "customer_id" }, { field: "customer_order_id" }] }] }],
-    },
-    rulesJson: [],
-  },
+type StarterTemplateOptions = {
+  assignmentField?: string | null;
+  keyField?: string | null;
 };
+
+const ASSIGNMENT_FIELD_META: Record<string, { label: string; lookupUrl: string; labelField: string }> = {
+  product_id: { label: "Product", lookupUrl: "/api/products?valid=true", labelField: "name" },
+  customer_id: { label: "Customer", lookupUrl: "/api/customers?valid=true", labelField: "name" },
+};
+
+const KEY_FIELD_META: Record<string, { label: string; lookupUrl: string; labelField: string }> = {
+  batch_id: { label: "Batch", lookupUrl: "/api/batches?valid=true&product_id={product_id}", labelField: "code" },
+  serial_number_id: { label: "Serial No", lookupUrl: "/api/serial-numbers?valid=true&product_id={product_id}", labelField: "serial_no" },
+  serial_id: { label: "Serial No", lookupUrl: "/api/serial-numbers?valid=true&product_id={product_id}", labelField: "serial_no" },
+  serial_no: { label: "Serial No", lookupUrl: "/api/serial-numbers?valid=true&product_id={product_id}", labelField: "serial_no" },
+  customer_order_id: { label: "Order No", lookupUrl: "/api/customer-orders?valid=true&customer_id={customer_id}", labelField: "order_no" },
+};
+
+function defaultsForType(type: FormTypeId) {
+  if (type === "CUSTOMER_ORDER") {
+    return { assignmentField: "customer_id", keyField: "customer_order_id", title: "Customer Order Form" };
+  }
+  if (type === "SERIAL_PRODUCTION_ORDER") {
+    return { assignmentField: "product_id", keyField: "serial_number_id", title: "Serial Production Form" };
+  }
+  return { assignmentField: "product_id", keyField: "batch_id", title: "Batch Production Form" };
+}
+
+function resolveFields(type: FormTypeId, options?: StarterTemplateOptions) {
+  const defaults = defaultsForType(type);
+  const assignmentField = options?.assignmentField && ASSIGNMENT_FIELD_META[options.assignmentField]
+    ? options.assignmentField
+    : defaults.assignmentField;
+  const keyField = options?.keyField && KEY_FIELD_META[options.keyField]
+    ? options.keyField
+    : defaults.keyField;
+  return { assignmentField, keyField, title: defaults.title };
+}
 
 export function deriveHeaderConfigFromFieldDefs(fieldDefs: unknown[]) {
   const typed = Array.isArray(fieldDefs) ? (fieldDefs as Array<Record<string, unknown>>) : [];
@@ -158,23 +57,50 @@ export function deriveHeaderConfigFromFieldDefs(fieldDefs: unknown[]) {
 
 export async function getStarterTemplate(
   formTypeKey: string,
-  repo: StarterTemplateRepo = new DefaultStarterTemplateRepo(),
-) {
+  options?: StarterTemplateOptions,
+): Promise<StarterTemplateData> {
   const normalizedType = normalizeTemplateType(formTypeKey);
-  let row: Awaited<ReturnType<StarterTemplateRepo["getByTemplateType"]>> | undefined;
-  try {
-    row = await repo.getByTemplateType(normalizedType);
-  } catch {
-    row = undefined;
-  }
-
-  if (!row) {
-    return structuredClone(FALLBACK_BY_TYPE[normalizedType]);
-  }
+  const resolved = resolveFields(normalizedType, options);
+  const assignmentMeta = ASSIGNMENT_FIELD_META[resolved.assignmentField] ?? ASSIGNMENT_FIELD_META.product_id;
+  const keyMeta = KEY_FIELD_META[resolved.keyField] ?? KEY_FIELD_META.batch_id;
 
   return {
-    fieldDefsJson: ensureArray(row.fieldDefsJson),
-    layoutJson: ensureLayout(row.layoutJson, normalizedType),
-    rulesJson: ensureArray(row.rulesJson),
+    fieldDefsJson: [
+      {
+        key: resolved.assignmentField,
+        type: "string",
+        label: assignmentMeta.label,
+        headerRole: "ASSIGNMENT",
+        semantic: "WRITABLE_ENTITY",
+        readonly: false,
+        required: true,
+        lookup: {
+          kind: "api",
+          url: assignmentMeta.lookupUrl,
+          valueField: "id",
+          labelField: assignmentMeta.labelField,
+        },
+      },
+      {
+        key: resolved.keyField,
+        type: "string",
+        label: keyMeta.label,
+        headerRole: "KEY",
+        semantic: "WRITABLE_ENTITY",
+        readonly: false,
+        required: true,
+        lookup: {
+          kind: "api",
+          url: keyMeta.lookupUrl,
+          valueField: "id",
+          labelField: keyMeta.labelField,
+        },
+      },
+    ],
+    layoutJson: {
+      title: resolved.title,
+      sections: [{ title: "Header", rows: [{ cols: [{ field: resolved.assignmentField }, { field: resolved.keyField }] }] }],
+    },
+    rulesJson: [],
   };
 }
